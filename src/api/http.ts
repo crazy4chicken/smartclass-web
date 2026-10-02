@@ -1,0 +1,161 @@
+import axios from 'axios'
+import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
+
+import type { ProblemDetails, TokenPair } from '@/api/types'
+import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
+
+/** localStorage keys holding the IAM token pair. */
+export const ACCESS_TOKEN_KEY = 'smartclass.iam.access'
+export const REFRESH_TOKEN_KEY = 'smartclass.iam.refresh'
+
+/** Endpoints that must never trigger a token refresh (they are the auth flow itself). */
+const AUTH_FLOW_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout']
+
+/** Endpoints that do not need an Authorization header. */
+const PUBLIC_REQUEST_PATHS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/logout',
+  '/auth/password-reset',
+  '/auth/verify-email',
+  '/auth/invite/accept',
+  '/auth/oidc',
+  '/auth/passkey',
+  '/.well-known/',
+]
+
+/** Normalized error thrown by every request made through {@link http}. */
+export class ApiError extends Error {
+  readonly status: number
+  readonly title: string
+  readonly detail: string
+  readonly type: string
+  readonly instance: string
+
+  constructor(status: number, title: string, detail = '', type = '', instance = '') {
+    super(detail || title)
+    this.name = 'ApiError'
+    this.status = status
+    this.title = title
+    this.detail = detail
+    this.type = type
+    this.instance = instance
+  }
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function isProblemDetails(value: unknown): value is ProblemDetails {
+  return typeof value === 'object' && value !== null && ('title' in value || 'detail' in value)
+}
+
+function toApiError(error: AxiosError<unknown>): ApiError {
+  const response = error.response
+  if (!response) {
+    return new ApiError(0, '网络错误', error.message || 'network error')
+  }
+  const { status, statusText, data } = response
+  if (isProblemDetails(data)) {
+    return new ApiError(status, asString(data.title), asString(data.detail), asString(data.type), asString(data.instance))
+  }
+  if (typeof data === 'string' && data.trim()) {
+    return new ApiError(status, statusText || '请求失败', data.trim().slice(0, 200))
+  }
+  return new ApiError(status, statusText || '请求失败')
+}
+
+function syncTokensIntoStore(accessToken: string | null, refreshToken: string | null): void {
+  try {
+    const auth = useAuthStore()
+    if (accessToken && refreshToken) {
+      auth.setTokens(accessToken, refreshToken)
+    } else {
+      auth.clear()
+    }
+  } catch {
+    // No active pinia instance (e.g. a refresh outside the app); localStorage is authoritative already.
+  }
+}
+
+export const http = axios.create({
+  baseURL: import.meta.env.VITE_IAM_BASE || '/iam-api',
+})
+
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem(ACCESS_TOKEN_KEY) ?? ''
+  const url = config.url ?? ''
+  if (token && !PUBLIC_REQUEST_PATHS.some((path) => url.startsWith(path))) {
+    config.headers.set('Authorization', `Bearer ${token}`)
+  }
+  return config
+})
+
+type RetryableConfig = InternalAxiosRequestConfig & { _authRetried?: boolean }
+
+/** In-flight refresh shared by concurrent 401s (single flight). */
+let refreshPromise: Promise<string> | null = null
+
+function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = performRefresh().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
+async function performRefresh(): Promise<string> {
+  // Bare axios instance on purpose: the instance interceptors must not observe the refresh call.
+  const { data } = await axios.post<TokenPair>(`${http.defaults.baseURL}/auth/refresh`, {
+    refresh_token: localStorage.getItem(REFRESH_TOKEN_KEY) ?? '',
+  })
+  localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token)
+  localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
+  syncTokensIntoStore(data.access_token, data.refresh_token)
+  return data.access_token
+}
+
+async function forceLogin(): Promise<void> {
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  syncTokensIntoStore(null, null)
+  if (router.currentRoute.value.path !== '/iam/login') {
+    await router.push('/iam/login')
+  }
+}
+
+http.interceptors.response.use(
+  (response) => response,
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error)) {
+      return Promise.reject(error)
+    }
+    const config = error.config as RetryableConfig | undefined
+    const url = config?.url ?? ''
+    const canRefresh =
+      error.response?.status === 401 &&
+      !!config &&
+      !config._authRetried &&
+      !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
+      !!localStorage.getItem(REFRESH_TOKEN_KEY)
+    if (config && canRefresh) {
+      config._authRetried = true
+      try {
+        await refreshAccessToken()
+        return await http(config)
+      } catch {
+        await forceLogin()
+        return Promise.reject(toApiError(error))
+      }
+    }
+    return Promise.reject(toApiError(error))
+  },
+)
