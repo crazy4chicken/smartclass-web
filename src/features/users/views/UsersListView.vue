@@ -114,26 +114,6 @@ const form = ref({
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: ['blur', 'change'] }],
-  password: [{ validator: requireOnePassword, trigger: 'blur' }],
-  initial_password: [{ validator: requireOnePassword, trigger: 'blur' }],
-}
-
-/** A passwordless account can never sign in — demand one of the two fields on create. */
-function requireOnePassword(
-  _rule: unknown,
-  _value: unknown,
-  callback: (error?: string | Error) => void,
-): void {
-  if (dialogMode.value === 'create' && form.value.password === '' && form.value.initial_password === '') {
-    callback(new Error('密码与初始密码至少填写一项，否则该用户无法登录'))
-    return
-  }
-  callback()
-}
-
-/** Typing in one password field clears the pair-validation error on the other. */
-function revalidatePasswordPair(): void {
-  formRef.value?.validateField(['password', 'initial_password']).catch(() => {})
 }
 
 function openCreate(): void {
@@ -508,8 +488,7 @@ onMounted(() => {
               v-model="form.password"
               type="password"
               show-password
-              placeholder="直接生效的正式密码"
-              @input="revalidatePasswordPair"
+              placeholder="直接生效的正式密码（可选）"
             />
           </el-form-item>
           <el-form-item label="初始密码" prop="initial_password">
@@ -517,8 +496,7 @@ onMounted(() => {
               v-model="form.initial_password"
               type="password"
               show-password
-              placeholder="首次登录后必须修改；同时填写密码时以密码为准"
-              @input="revalidatePasswordPair"
+              placeholder="首次登录后必须修改；同时填写密码时以密码为准（可选）"
             />
           </el-form-item>
         </template>
