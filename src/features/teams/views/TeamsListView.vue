@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { CopyDocument, Plus, Refresh } from '@element-plus/icons-vue'
 
 import type { Team } from '@/api/types'
 import { useCursorList } from '@/composables/useCursorList'
@@ -24,6 +24,15 @@ function statusMeta(status: string): { label: string; type: TagType } {
 
 function formatTime(value: string): string {
   return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+}
+
+async function copy(value: string, label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success(`${label}已复制`)
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
 }
 
 const { items, loading, finished, loadMore, reload } = useCursorList<Team>(listTeams)
@@ -144,6 +153,14 @@ onMounted(() => {
     </div>
 
     <el-table v-loading="loading" :data="items" border stripe>
+      <el-table-column label="ID" min-width="330">
+        <template #default="{ row }">
+          <div class="id-cell">
+            <span class="mono">{{ row.id }}</span>
+            <el-button link type="primary" :icon="CopyDocument" title="复制 ID" @click="copy(row.id, 'ID')" />
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="name" label="名称" min-width="160" />
       <el-table-column prop="slug" label="标识（slug）" min-width="180" />
       <el-table-column label="状态" width="110">
@@ -228,6 +245,16 @@ onMounted(() => {
 .footer-hint {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+.mono {
+  font-family: monospace;
+}
+
+.id-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .full-width {

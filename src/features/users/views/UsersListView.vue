@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance, UploadFile } from 'element-plus'
-import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { CopyDocument, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 
 import type { BatchResult, ImportResult, User } from '@/api/types'
 import { useCursorList } from '@/composables/useCursorList'
@@ -58,6 +58,15 @@ function resultErrorText(error?: string): string {
 
 function formatTime(value: string): string {
   return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
+}
+
+async function copy(value: string, label: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success(`${label}已复制`)
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
 }
 
 const tableRef = ref<TableInstance>()
@@ -436,6 +445,14 @@ onMounted(() => {
       @selection-change="onSelectionChange"
     >
       <el-table-column type="selection" width="46" />
+      <el-table-column label="ID" min-width="330">
+        <template #default="{ row }">
+          <div class="id-cell">
+            <span class="mono">{{ row.id }}</span>
+            <el-button link type="primary" :icon="CopyDocument" title="复制 ID" @click="copy(row.id, 'ID')" />
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="username" label="用户名" min-width="140" />
       <el-table-column prop="display_name" label="显示名" min-width="140" />
       <el-table-column label="邮箱" min-width="200">
@@ -662,6 +679,12 @@ onMounted(() => {
 
 .mono {
   font-family: monospace;
+}
+
+.id-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .full-width {
