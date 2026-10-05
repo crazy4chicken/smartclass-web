@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 import type { ProblemDetails, TokenPair } from '@/api/types'
+import { requestStepUp } from '@/features/auth/stepup'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -98,7 +99,7 @@ http.interceptors.request.use((config) => {
   return config
 })
 
-type RetryableConfig = InternalAxiosRequestConfig & { _authRetried?: boolean }
+type RetryableConfig = InternalAxiosRequestConfig & { _authRetried?: boolean; _stepUpRetried?: boolean }
 
 /** In-flight refresh shared by concurrent 401s (single flight). */
 let refreshPromise: Promise<string> | null = null
@@ -138,6 +139,7 @@ http.interceptors.response.use(
     if (!axios.isAxiosError(error)) {
       return Promise.reject(error)
     }
+    const apiError = toApiError(error)
     const config = error.config as RetryableConfig | undefined
     const url = config?.url ?? ''
     const canRefresh =
@@ -153,9 +155,26 @@ http.interceptors.response.use(
         return await http(config)
       } catch {
         await forceLogin()
-        return Promise.reject(toApiError(error))
+        return Promise.reject(apiError)
       }
     }
-    return Promise.reject(toApiError(error))
+    // Step-up means the access token is valid but its `auth_time` claim is stale.
+    // `/auth/refresh` does not renew `auth_time`, so a fresh password login is the only remedy.
+    const canStepUp =
+      apiError.status === 403 &&
+      !!config &&
+      !config._stepUpRetried &&
+      !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
+      (apiError.detail === 'step_up_required' || apiError.title === 'step_up_required')
+    if (config && canStepUp) {
+      config._stepUpRetried = true
+      try {
+        await requestStepUp()
+        return await http(config)
+      } catch {
+        return Promise.reject(apiError)
+      }
+    }
+    return Promise.reject(apiError)
   },
 )
