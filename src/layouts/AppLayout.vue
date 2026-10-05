@@ -5,11 +5,14 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
   Avatar,
+  Calendar,
   Collection,
   Expand,
   Fold,
   Key,
   Link,
+  Monitor,
+  Odometer,
   OfficeBuilding,
   Promotion,
   School,
@@ -18,23 +21,27 @@ import {
   Switch,
   Tickets,
   Unlock,
+  Upload,
   User,
+  VideoCamera,
 } from '@element-plus/icons-vue'
 
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { services } from '@/services/registry'
 import { useAuthStore } from '@/stores/auth'
 
-interface IamSection {
+interface Section {
   title: string
   path: string
   icon: Component
-  /** Backend admin areas gating this section; undefined means always visible. */
+  /** Backend admin areas gating this IAM section; undefined means always visible. */
   areas?: readonly string[]
+  /** `dispatch:*` actions gating this hub section; undefined means always visible. */
+  actions?: readonly string[]
 }
 
 /** Section navigation shown while the route lives under `/iam`. */
-const IAM_SECTIONS: IamSection[] = [
+const IAM_SECTIONS: Section[] = [
   { title: '用户', path: '/iam/users', icon: User, areas: ['users'] },
   { title: '团队', path: '/iam/teams', icon: OfficeBuilding, areas: ['teams'] },
   { title: '用户组', path: '/iam/groups', icon: Collection, areas: ['groups'] },
@@ -49,6 +56,15 @@ const IAM_SECTIONS: IamSection[] = [
   { title: '个人中心', path: '/iam/me', icon: Setting },
 ]
 
+/** Section navigation shown while the route lives under `/hub` (smartclass-dispatchub). */
+const HUB_SECTIONS: Section[] = [
+  { title: '录播场次', path: '/hub/sessions', icon: VideoCamera, actions: ['read', 'control'] },
+  { title: '教室与绑定', path: '/hub/rooms', icon: Monitor, actions: ['read', 'manage', 'control'] },
+  { title: '学期与节次', path: '/hub/terms', icon: Calendar, actions: ['read', 'manage'] },
+  { title: '课表导入', path: '/hub/timetable', icon: Upload, actions: ['read', 'manage'] },
+  { title: '服务健康', path: '/hub/health', icon: Odometer, actions: ['read', 'manage', 'control'] },
+]
+
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -61,16 +77,39 @@ const activeServicePath = computed(
 )
 
 const isIamArea = computed(() => route.path === '/iam' || route.path.startsWith('/iam/'))
+const isHubArea = computed(() => route.path === '/hub' || route.path.startsWith('/hub/'))
+
+/** Sections of the area the current route belongs to; empty outside both consoles. */
+const activeSections = computed<Section[]>(() => {
+  if (isIamArea.value) {
+    return IAM_SECTIONS
+  }
+  if (isHubArea.value) {
+    return HUB_SECTIONS
+  }
+  return []
+})
+
+const asideTitle = computed(() => (isIamArea.value ? '身份与访问管理' : '录播调度'))
 
 /** Sections the current user actually holds grants for. */
 const visibleSections = computed(() =>
-  IAM_SECTIONS.filter((section) => !section.areas || section.areas.some((area) => auth.hasIamArea(area))),
+  activeSections.value.filter((section) => {
+    if (section.areas) {
+      return section.areas.some((area) => auth.hasIamArea(area))
+    }
+    if (section.actions) {
+      return section.actions.some((action) => auth.hasGrant('dispatch', action))
+    }
+    return true
+  }),
 )
 
 const activeSectionPath = computed(
   () =>
-    IAM_SECTIONS.find((section) => route.path === section.path || route.path.startsWith(`${section.path}/`))?.path ??
-    '',
+    activeSections.value.find(
+      (section) => route.path === section.path || route.path.startsWith(`${section.path}/`),
+    )?.path ?? '',
 )
 
 const displayName = computed(() => auth.profile?.display_name || auth.profile?.username || '用户')
@@ -143,8 +182,8 @@ async function onUserCommand(command: string): Promise<void> {
     </el-header>
 
     <el-container class="app-body">
-      <el-aside v-if="isIamArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
-        <div v-if="!collapsed" class="app-aside-title">身份与访问管理</div>
+      <el-aside v-if="isIamArea || isHubArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
+        <div v-if="!collapsed" class="app-aside-title">{{ asideTitle }}</div>
         <el-menu
           class="app-aside-menu"
           :collapse="collapsed"

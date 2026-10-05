@@ -5,6 +5,7 @@ import auditRoutes from '@/features/audit/routes'
 import authRoutes from '@/features/auth/routes'
 import bindingsRoutes from '@/features/bindings/routes'
 import groupsRoutes from '@/features/groups/routes'
+import hubRoutes from '@/features/hub/routes'
 import impersonationsRoutes from '@/features/impersonations/routes'
 import invitationsRoutes from '@/features/invitations/routes'
 import keysRoutes from '@/features/keys/routes'
@@ -15,7 +16,7 @@ import rolesRoutes from '@/features/roles/routes'
 import teamsRoutes from '@/features/teams/routes'
 import usersRoutes from '@/features/users/routes'
 import AppLayout from '@/layouts/AppLayout.vue'
-import IamLayout from '@/layouts/IamLayout.vue'
+import SectionLayout from '@/layouts/SectionLayout.vue'
 import { services } from '@/services/registry'
 import { useAuthStore } from '@/stores/auth'
 import ServicePlaceholder from '@/views/ServicePlaceholder.vue'
@@ -26,6 +27,8 @@ declare module 'vue-router' {
     public?: boolean
     /** Human readable page title used by breadcrumbs and tabs. */
     title?: string
+    /** `dispatch:*` actions that may open the page; read by the guard and the sidebar. */
+    actions?: readonly string[]
   }
 }
 
@@ -128,7 +131,8 @@ const routes: RouteRecordRaw[] = [
     component: AppLayout,
     children: [
       { path: '', redirect: '/iam' },
-      { path: 'iam', component: IamLayout, children: iamChildren },
+      { path: 'iam', component: SectionLayout, children: iamChildren },
+      { path: 'hub', component: SectionLayout, children: hubRoutes },
       ...placeholderRoutes,
     ],
   },
@@ -169,10 +173,34 @@ interface IamAccess {
   hasIamArea: (area: string) => boolean
 }
 
+/** Minimal capability surface the router needs for the dispatch console. */
+interface HubAccess {
+  hasGrant: (system: string, area: string) => boolean
+}
+
 /** First IAM section the user may open, in sidebar order; `/iam/me` when none. */
 function firstAllowedIamPath(auth: IamAccess): string {
   const entry = IAM_AREA_BY_PATH.find(([, areas]) => areas.some((area) => auth.hasIamArea(area)))
   return entry?.[0] ?? '/iam/me'
+}
+
+/**
+ * `/hub` sections mapped to the `dispatch:*` actions that may open them, mirroring
+ * `src/features/hub/routes.ts`. Collection reads need the any-scoped read key while
+ * control and manage actions are checked inside each page.
+ */
+const HUB_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['/hub/sessions', ['read', 'control']],
+  ['/hub/rooms', ['read', 'manage', 'control']],
+  ['/hub/terms', ['read', 'manage']],
+  ['/hub/timetable', ['read', 'manage']],
+  ['/hub/health', ['read', 'manage', 'control']],
+]
+
+/** First dispatch section the user may open, in sidebar order; `null` when they hold no key. */
+function firstAllowedHubPath(auth: HubAccess): string | null {
+  const entry = HUB_AREA_BY_PATH.find(([, actions]) => actions.some((action) => auth.hasGrant('dispatch', action)))
+  return entry?.[0] ?? null
 }
 
 router.beforeEach(async (to) => {
@@ -184,6 +212,21 @@ router.beforeEach(async (to) => {
     return { path: '/iam' }
   }
   if (auth.isAuthenticated && !to.meta.public) {
+    if (to.path === '/hub' || to.path.startsWith('/hub/')) {
+      if (!auth.permissionsLoaded) {
+        // Without a readable grant set, pages stay reachable and surface API errors instead.
+        await auth.fetchPermissions().catch(() => undefined)
+      }
+      const allowed = firstAllowedHubPath(auth)
+      if (!allowed) {
+        return { path: firstAllowedIamPath(auth) }
+      }
+      const actions = HUB_AREA_BY_PATH.find(([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`))?.[1]
+      if (to.path === '/hub' || (actions && !actions.some((action) => auth.hasGrant('dispatch', action)))) {
+        return { path: allowed }
+      }
+      return true
+    }
     const areas = iamAreasForPath(to.path)
     if (to.path === '/iam' || areas) {
       if (!auth.permissionsLoaded) {

@@ -71,15 +71,21 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Whether the user holds any effective grant in the given IAM admin area
-   * (`iam:<area>:<scope>`), honoring `*` wildcards in either segment.
+   * Whether the user holds any effective grant in `<system>:<area>` (`*` matches either
+   * segment). Mirrors the backend's `any > team > own` ladder for existence checks:
+   * a narrower scope still proves the caller may open the area.
    */
-  function hasIamArea(area: string): boolean {
+  function hasGrant(system: string, area: string): boolean {
     return permissions.value.some((key) => {
-      const [system, grantedArea] = key.split(':')
-      return (system === 'iam' || system === '*') && (grantedArea === '*' || grantedArea === area)
+      const [grantedSystem, grantedArea] = key.split(':')
+      return (grantedSystem === system || grantedSystem === '*') && (grantedArea === '*' || grantedArea === area)
     })
   }
 
-  return { accessToken, refreshToken, profile, permissions, permissionsLoaded, isAuthenticated, setTokens, clear, login, logout, fetchProfile, fetchPermissions, hasIamArea }
+  /** Whether the user holds any effective grant in the given IAM admin area. */
+  function hasIamArea(area: string): boolean {
+    return hasGrant('iam', area)
+  }
+
+  return { accessToken, refreshToken, profile, permissions, permissionsLoaded, isAuthenticated, setTokens, clear, login, logout, fetchProfile, fetchPermissions, hasGrant, hasIamArea }
 })

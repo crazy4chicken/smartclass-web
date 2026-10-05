@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-/** Routes for the personal center (mounted inside IamLayout as a child of `/iam`). */
+/** Routes for the personal center (mounted inside the shared section layout as a child of `/iam`). */
 export default [
   {
     path: '/iam/me',

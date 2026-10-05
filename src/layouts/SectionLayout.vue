@@ -1,11 +1,11 @@
 <template>
-  <div class="iam-layout">
+  <div class="section-layout">
     <router-view />
   </div>
 </template>
 
 <style scoped>
-.iam-layout {
+.section-layout {
   box-sizing: border-box;
   min-height: 100%;
   padding: 16px;

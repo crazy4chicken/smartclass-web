@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import type { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
 import type { ProblemDetails, TokenPair } from '@/api/types'
 import { requestStepUp } from '@/features/auth/stepup'
@@ -12,6 +12,12 @@ export const REFRESH_TOKEN_KEY = 'smartclass.iam.refresh'
 
 /** Endpoints that must never trigger a token refresh (they are the auth flow itself). */
 const AUTH_FLOW_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout']
+
+/** Bearer-token issuer base; also the target of the single-flight refresh. */
+const IAM_BASE = import.meta.env.VITE_IAM_BASE || '/iam-api'
+
+/** smartclass-dispatchub base; requests keep the service's own paths (`/api/v1/...`, `/healthz`). */
+const DISPATCH_BASE = import.meta.env.VITE_DISPATCH_BASE || '/dispatch-api'
 
 /** Endpoints that do not need an Authorization header. */
 const PUBLIC_REQUEST_PATHS = [
@@ -86,20 +92,79 @@ function syncTokensIntoStore(accessToken: string | null, refreshToken: string | 
   }
 }
 
-export const http = axios.create({
-  baseURL: import.meta.env.VITE_IAM_BASE || '/iam-api',
-})
-
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem(ACCESS_TOKEN_KEY) ?? ''
-  const url = config.url ?? ''
-  if (token && !PUBLIC_REQUEST_PATHS.some((path) => url.startsWith(path))) {
-    config.headers.set('Authorization', `Bearer ${token}`)
-  }
-  return config
-})
-
 type RetryableConfig = InternalAxiosRequestConfig & { _authRetried?: boolean; _stepUpRetried?: boolean }
+
+/**
+ * Builds a client that shares the bearer token, the single-flight refresh and the
+ * step-up replay. Every service client in the app is created here so the behaviour
+ * cannot drift between them.
+ */
+function createClient(baseURL: string): AxiosInstance {
+  const instance = axios.create({ baseURL })
+
+  instance.interceptors.request.use((config) => {
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY) ?? ''
+    const url = config.url ?? ''
+    if (token && !PUBLIC_REQUEST_PATHS.some((path) => url.startsWith(path))) {
+      config.headers.set('Authorization', `Bearer ${token}`)
+    }
+    return config
+  })
+
+  instance.interceptors.response.use(
+    (response) => response,
+    async (error: unknown) => {
+      if (!axios.isAxiosError(error)) {
+        return Promise.reject(error)
+      }
+      const apiError = toApiError(error)
+      const config = error.config as RetryableConfig | undefined
+      const url = config?.url ?? ''
+      const canRefresh =
+        error.response?.status === 401 &&
+        !!config &&
+        !config._authRetried &&
+        !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
+        !!localStorage.getItem(REFRESH_TOKEN_KEY)
+      if (config && canRefresh) {
+        config._authRetried = true
+        try {
+          await refreshAccessToken()
+          return await instance(config)
+        } catch {
+          await forceLogin()
+          return Promise.reject(apiError)
+        }
+      }
+      // Step-up means the access token is valid but its `auth_time` claim is stale.
+      // `/auth/refresh` does not renew `auth_time`, so a fresh password login is the only remedy.
+      const canStepUp =
+        apiError.status === 403 &&
+        !!config &&
+        !config._stepUpRetried &&
+        !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
+        (apiError.detail === 'step_up_required' || apiError.title === 'step_up_required')
+      if (config && canStepUp) {
+        config._stepUpRetried = true
+        try {
+          await requestStepUp()
+          return await instance(config)
+        } catch {
+          return Promise.reject(apiError)
+        }
+      }
+      return Promise.reject(apiError)
+    },
+  )
+
+  return instance
+}
+
+export const http = createClient(IAM_BASE)
+
+/** smartclass-dispatchub client; call sites pass the service's own paths (`/api/v1/...`). */
+export const hubHttp = createClient(DISPATCH_BASE)
+
 
 /** In-flight refresh shared by concurrent 401s (single flight). */
 let refreshPromise: Promise<string> | null = null
@@ -115,7 +180,7 @@ function refreshAccessToken(): Promise<string> {
 
 async function performRefresh(): Promise<string> {
   // Bare axios instance on purpose: the instance interceptors must not observe the refresh call.
-  const { data } = await axios.post<TokenPair>(`${http.defaults.baseURL}/auth/refresh`, {
+  const { data } = await axios.post<TokenPair>(`${IAM_BASE}/auth/refresh`, {
     refresh_token: localStorage.getItem(REFRESH_TOKEN_KEY) ?? '',
   })
   localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token)
@@ -132,49 +197,3 @@ async function forceLogin(): Promise<void> {
     await router.push('/iam/login')
   }
 }
-
-http.interceptors.response.use(
-  (response) => response,
-  async (error: unknown) => {
-    if (!axios.isAxiosError(error)) {
-      return Promise.reject(error)
-    }
-    const apiError = toApiError(error)
-    const config = error.config as RetryableConfig | undefined
-    const url = config?.url ?? ''
-    const canRefresh =
-      error.response?.status === 401 &&
-      !!config &&
-      !config._authRetried &&
-      !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
-      !!localStorage.getItem(REFRESH_TOKEN_KEY)
-    if (config && canRefresh) {
-      config._authRetried = true
-      try {
-        await refreshAccessToken()
-        return await http(config)
-      } catch {
-        await forceLogin()
-        return Promise.reject(apiError)
-      }
-    }
-    // Step-up means the access token is valid but its `auth_time` claim is stale.
-    // `/auth/refresh` does not renew `auth_time`, so a fresh password login is the only remedy.
-    const canStepUp =
-      apiError.status === 403 &&
-      !!config &&
-      !config._stepUpRetried &&
-      !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
-      (apiError.detail === 'step_up_required' || apiError.title === 'step_up_required')
-    if (config && canStepUp) {
-      config._stepUpRetried = true
-      try {
-        await requestStepUp()
-        return await http(config)
-      } catch {
-        return Promise.reject(apiError)
-      }
-    }
-    return Promise.reject(apiError)
-  },
-)
