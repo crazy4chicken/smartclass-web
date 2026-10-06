@@ -5,8 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
   Avatar,
+  Box,
   Calendar,
   Collection,
+  DataLine,
   Expand,
   Fold,
   Key,
@@ -20,6 +22,7 @@ import {
   Setting,
   Switch,
   Tickets,
+  Tools,
   Unlock,
   Upload,
   User,
@@ -36,7 +39,9 @@ interface Section {
   icon: Component
   /** Backend admin areas gating this IAM section; undefined means always visible. */
   areas?: readonly string[]
-  /** `dispatch:*` actions gating this hub section; undefined means always visible. */
+  /** Permission system (`dispatch`, `filehouse`, ...) whose `actions` gate this section. */
+  system?: string
+  /** Actions checked inside `system` for this section. */
   actions?: readonly string[]
 }
 
@@ -58,11 +63,18 @@ const IAM_SECTIONS: Section[] = [
 
 /** Section navigation shown while the route lives under `/hub` (smartclass-dispatchub). */
 const HUB_SECTIONS: Section[] = [
-  { title: '录播场次', path: '/hub/sessions', icon: VideoCamera, actions: ['read', 'control'] },
-  { title: '教室与绑定', path: '/hub/rooms', icon: Monitor, actions: ['read', 'manage', 'control'] },
-  { title: '学期与节次', path: '/hub/terms', icon: Calendar, actions: ['read', 'manage'] },
-  { title: '课表导入', path: '/hub/timetable', icon: Upload, actions: ['read', 'manage'] },
-  { title: '服务健康', path: '/hub/health', icon: Odometer, actions: ['read', 'manage', 'control'] },
+  { title: '录播场次', path: '/hub/sessions', icon: VideoCamera, system: 'dispatch', actions: ['read', 'control'] },
+  { title: '教室与绑定', path: '/hub/rooms', icon: Monitor, system: 'dispatch', actions: ['read', 'manage', 'control'] },
+  { title: '学期与节次', path: '/hub/terms', icon: Calendar, system: 'dispatch', actions: ['read', 'manage'] },
+  { title: '课表导入', path: '/hub/timetable', icon: Upload, system: 'dispatch', actions: ['read', 'manage'] },
+  { title: '服务健康', path: '/hub/health', icon: Odometer, system: 'dispatch', actions: ['read', 'manage', 'control'] },
+]
+
+/** Section navigation shown while the route lives under `/file` (nsc-filehouse). */
+const FILE_SECTIONS: Section[] = [
+  { title: '文件桶', path: '/file/buckets', icon: Box, system: 'filehouse', actions: ['read', 'write', 'delete', 'manage'] },
+  { title: '我的存储', path: '/file/usage', icon: DataLine },
+  { title: '平台管理', path: '/file/admin', icon: Tools, system: 'filehouse', actions: ['manage'] },
 ]
 
 const route = useRoute()
@@ -78,8 +90,9 @@ const activeServicePath = computed(
 
 const isIamArea = computed(() => route.path === '/iam' || route.path.startsWith('/iam/'))
 const isHubArea = computed(() => route.path === '/hub' || route.path.startsWith('/hub/'))
+const isFileArea = computed(() => route.path === '/file' || route.path.startsWith('/file/'))
 
-/** Sections of the area the current route belongs to; empty outside both consoles. */
+/** Sections of the area the current route belongs to; empty outside the consoles. */
 const activeSections = computed<Section[]>(() => {
   if (isIamArea.value) {
     return IAM_SECTIONS
@@ -87,10 +100,18 @@ const activeSections = computed<Section[]>(() => {
   if (isHubArea.value) {
     return HUB_SECTIONS
   }
+  if (isFileArea.value) {
+    return FILE_SECTIONS
+  }
   return []
 })
 
-const asideTitle = computed(() => (isIamArea.value ? '身份与访问管理' : '录播调度'))
+const asideTitle = computed(() => {
+  if (isIamArea.value) {
+    return '身份与访问管理'
+  }
+  return isHubArea.value ? '录播调度' : '文件服务'
+})
 
 /** Sections the current user actually holds grants for. */
 const visibleSections = computed(() =>
@@ -98,8 +119,9 @@ const visibleSections = computed(() =>
     if (section.areas) {
       return section.areas.some((area) => auth.hasIamArea(area))
     }
-    if (section.actions) {
-      return section.actions.some((action) => auth.hasGrant('dispatch', action))
+    const { system, actions } = section
+    if (system !== undefined && actions !== undefined) {
+      return actions.some((action) => auth.hasGrant(system, action))
     }
     return true
   }),
@@ -182,7 +204,7 @@ async function onUserCommand(command: string): Promise<void> {
     </el-header>
 
     <el-container class="app-body">
-      <el-aside v-if="isIamArea || isHubArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
+      <el-aside v-if="isIamArea || isHubArea || isFileArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
         <div v-if="!collapsed" class="app-aside-title">{{ asideTitle }}</div>
         <el-menu
           class="app-aside-menu"

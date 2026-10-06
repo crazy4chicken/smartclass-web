@@ -19,6 +19,9 @@ const IAM_BASE = import.meta.env.VITE_IAM_BASE || '/iam-api'
 /** smartclass-dispatchub base; requests keep the service's own paths (`/api/v1/...`, `/healthz`). */
 const DISPATCH_BASE = import.meta.env.VITE_DISPATCH_BASE || '/dispatch-api'
 
+/** nsc-filehouse base; requests keep the service's own paths (`/api/v1/...`, `/presign/...`, `/healthz`). */
+const FILE_BASE = import.meta.env.VITE_FILE_BASE || '/file-api'
+
 /** Endpoints that do not need an Authorization header. */
 const PUBLIC_REQUEST_PATHS = [
   '/auth/login',
@@ -164,6 +167,9 @@ export const http = createClient(IAM_BASE)
 
 /** smartclass-dispatchub client; call sites pass the service's own paths (`/api/v1/...`). */
 export const hubHttp = createClient(DISPATCH_BASE)
+
+/** nsc-filehouse client; call sites pass the service's own paths (`/api/v1/...`, `/presign/...`). */
+export const fileHttp = createClient(FILE_BASE)
 
 
 /** In-flight refresh shared by concurrent 401s (single flight). */

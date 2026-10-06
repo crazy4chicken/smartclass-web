@@ -16,6 +16,7 @@
 - pnpm ≥ 9
 - 可访问的 teamusers 身份认证服务（IAM 后端）
 - 可访问的 smartclass-dispatchub 录播调度服务（控制台依赖，未部署时「录播调度」页面会报上游不可用）
+- 可访问的 nsc-filehouse 文件服务（控制台依赖，未部署时「文件服务」页面会报服务不可用）
 
 ## 三、启动方法
 
@@ -26,14 +27,14 @@
    pnpm dev
    ```
 
-2. 开发模式下前端将 `/iam-api` 开头的请求代理到 IAM 后端，默认目标为 `http://127.0.0.1:8080`；`/dispatch-api` 开头的请求代理到录播调度服务，默认目标为 `http://127.0.0.1:8081`。后端在其他地址时通过环境变量覆盖：
+2. 开发模式下前端将 `/iam-api` 开头的请求代理到 IAM 后端，默认目标为 `http://127.0.0.1:8080`；`/dispatch-api` 开头的请求代理到录播调度服务，默认目标为 `http://127.0.0.1:8081`；`/file-api` 开头的请求代理到文件服务，默认目标为 `http://127.0.0.1:8095`。后端在其他地址时通过环境变量覆盖：
 
    ```sh
    # Windows (cmd)
-   set IAM_ORIGIN=http://192.168.1.10:8080 && set DISPATCH_ORIGIN=http://192.168.1.10:8081 && pnpm dev
+   set IAM_ORIGIN=http://192.168.1.10:8080 && set DISPATCH_ORIGIN=http://192.168.1.10:8081 && set FILE_ORIGIN=http://192.168.1.10:8095 && pnpm dev
 
    # Linux / macOS
-   IAM_ORIGIN=http://192.168.1.10:8080 DISPATCH_ORIGIN=http://192.168.1.10:8081 pnpm dev
+   IAM_ORIGIN=http://192.168.1.10:8080 DISPATCH_ORIGIN=http://192.168.1.10:8081 FILE_ORIGIN=http://192.168.1.10:8095 pnpm dev
    ```
 
 3. 生产构建与本地预览：
@@ -49,7 +50,7 @@
 
 2. 将 `dist/` 托管到任意静态文件服务器。因路由使用 history 模式，服务器需配置 SPA 回退：所有未命中的路径返回 `index.html`。
 
-3. 前端默认以相对路径 `/iam-api` 调用 IAM 后端、以 `/dispatch-api` 调用录播调度服务（保留服务自身的 `/api/v1` 与探针路径），静态服务器需将两个前缀分别反向代理到对应服务（并去掉前缀）。nginx 参考配置：
+3. 前端默认以相对路径 `/iam-api` 调用 IAM 后端、以 `/dispatch-api` 调用录播调度服务、以 `/file-api` 调用文件服务（三者都保留服务自身的路径，如 `/api/v1`、`/healthz`），静态服务器需将三个前缀分别反向代理到对应服务（并去掉前缀）。nginx 参考配置：
 
    ```nginx
    server {
@@ -66,6 +67,12 @@
 
        location /dispatch-api/ {
            proxy_pass http://127.0.0.1:8081/;
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       }
+
+       location /file-api/ {
+           proxy_pass http://127.0.0.1:8095/;
            proxy_set_header Host $host;
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
        }

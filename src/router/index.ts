@@ -4,6 +4,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import auditRoutes from '@/features/audit/routes'
 import authRoutes from '@/features/auth/routes'
 import bindingsRoutes from '@/features/bindings/routes'
+import fileRoutes from '@/features/file/routes'
 import groupsRoutes from '@/features/groups/routes'
 import hubRoutes from '@/features/hub/routes'
 import impersonationsRoutes from '@/features/impersonations/routes'
@@ -133,6 +134,7 @@ const routes: RouteRecordRaw[] = [
       { path: '', redirect: '/iam' },
       { path: 'iam', component: SectionLayout, children: iamChildren },
       { path: 'hub', component: SectionLayout, children: hubRoutes },
+      { path: 'file', component: SectionLayout, children: fileRoutes },
       ...placeholderRoutes,
     ],
   },
@@ -203,6 +205,22 @@ function firstAllowedHubPath(auth: HubAccess): string | null {
   return entry?.[0] ?? null
 }
 
+/**
+ * `/file` sections mapped to the `filehouse:*` actions that may open them, mirroring
+ * `src/features/file/routes.ts`. `/file/usage` carries no `actions` because the
+ * self-service endpoints only require a valid bearer token.
+ */
+const FILE_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['/file/buckets', ['read', 'write', 'delete', 'manage']],
+  ['/file/admin', ['manage']],
+]
+
+/** First filehouse section the user may open; `/file/usage` is open to any caller. */
+function firstAllowedFilePath(auth: HubAccess): string {
+  const entry = FILE_AREA_BY_PATH.find(([, actions]) => actions.some((action) => auth.hasGrant('filehouse', action)))
+  return entry?.[0] ?? '/file/usage'
+}
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isAuthenticated) {
@@ -212,6 +230,18 @@ router.beforeEach(async (to) => {
     return { path: '/iam' }
   }
   if (auth.isAuthenticated && !to.meta.public) {
+    if (to.path === '/file' || to.path.startsWith('/file/')) {
+      if (!auth.permissionsLoaded) {
+        await auth.fetchPermissions().catch(() => undefined)
+      }
+      const actions = FILE_AREA_BY_PATH.find(
+        ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
+      )?.[1]
+      if (to.path === '/file' || (actions && !actions.some((action) => auth.hasGrant('filehouse', action)))) {
+        return { path: firstAllowedFilePath(auth) }
+      }
+      return true
+    }
     if (to.path === '/hub' || to.path.startsWith('/hub/')) {
       if (!auth.permissionsLoaded) {
         // Without a readable grant set, pages stay reachable and surface API errors instead.

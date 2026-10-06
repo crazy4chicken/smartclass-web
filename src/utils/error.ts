@@ -62,6 +62,22 @@ const ERROR_MESSAGES: Record<string, string> = {
   duplicate_import: '同一文件已导入过，确认无误可勾选强制提交',
   import_validation_failed: '课表校验失败',
   session_collision: '与既有录制场次冲突（同机位时间段重叠）',
+  invalid_bucket_name: '桶名不合法',
+  invalid_key: '对象键不合法',
+  bucket_not_found: '桶不存在',
+  bucket_exists: '桶已存在',
+  bucket_not_empty: '桶非空，请先删除其中的对象',
+  object_not_found: '对象不存在',
+  upload_not_found: '分片上传不存在',
+  upload_expired: '分片上传已过期',
+  payload_too_large: '请求体过大',
+  checksum_mismatch: '校验和不匹配',
+  quota_exceeded: '配额不足',
+  part_mismatch: '分片数据不一致',
+  presign_invalid: '预签名链接无效',
+  presign_expired: '预签名链接已过期',
+  iam_unavailable: '鉴权服务不可用',
+  service_unavailable: '服务不可用',
 }
 
 /** Maps any thrown value to a Simplified Chinese message for `ElMessage.error`. */
