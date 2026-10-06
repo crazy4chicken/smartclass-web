@@ -234,6 +234,11 @@ router.beforeEach(async (to) => {
       if (!auth.permissionsLoaded) {
         await auth.fetchPermissions().catch(() => undefined)
       }
+      if (!auth.permissionsLoaded) {
+        // The grant set could not be read (service unreachable). Keep the page and let it
+        // surface the API error instead of bouncing the user into another area.
+        return true
+      }
       const actions = FILE_AREA_BY_PATH.find(
         ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
       )?.[1]
@@ -244,8 +249,11 @@ router.beforeEach(async (to) => {
     }
     if (to.path === '/hub' || to.path.startsWith('/hub/')) {
       if (!auth.permissionsLoaded) {
-        // Without a readable grant set, pages stay reachable and surface API errors instead.
         await auth.fetchPermissions().catch(() => undefined)
+      }
+      if (!auth.permissionsLoaded) {
+        // Same as `/file`: an unreadable grant set must not redirect into the IAM area.
+        return true
       }
       const allowed = firstAllowedHubPath(auth)
       if (!allowed) {
@@ -260,8 +268,11 @@ router.beforeEach(async (to) => {
     const areas = iamAreasForPath(to.path)
     if (to.path === '/iam' || areas) {
       if (!auth.permissionsLoaded) {
-        // Without a readable grant set, pages stay visible and surface API errors.
         await auth.fetchPermissions().catch(() => undefined)
+      }
+      if (!auth.permissionsLoaded) {
+        // An unreadable grant set keeps every IAM page reachable for the same reason.
+        return true
       }
       if (to.path === '/iam') {
         return { path: firstAllowedIamPath(auth) }
