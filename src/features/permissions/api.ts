@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { collectPages } from '@/api/cursor'
 import type { Page, Permission } from '@/api/types'
 
 /** Payload for `POST /permissions/` — registration is an upsert keyed by `key`. */
@@ -22,18 +23,7 @@ export async function listPermissions(cursor: string, limit: number): Promise<Pa
  * used to populate the role permission picker.
  */
 export async function listAllPermissions(): Promise<Permission[]> {
-  const all: Permission[] = []
-  let cursor = ''
-  for (let page = 0; page < MAX_PERMISSION_PAGES; page += 1) {
-    const result = await listPermissions(cursor, 100)
-    all.push(...result.items)
-    const next = result.next_cursor
-    if (next === '' || next === null || next === undefined || Number(next) === 0) {
-      break
-    }
-    cursor = String(next)
-  }
-  return all
+  return collectPages((cursor) => listPermissions(cursor, 100), MAX_PERMISSION_PAGES)
 }
 
 /**

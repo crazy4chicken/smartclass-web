@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { collectPages } from '@/api/cursor'
 import type { Page, Role } from '@/api/types'
 
 /** Payload for `POST /roles/`; `team_id` may be a ULID or JSON null (platform role). */
@@ -74,16 +75,5 @@ export async function listRolePermissions(
 
 /** `GET /roles/{id}/permissions` — every page, used to pre-select the dialog. */
 export async function listAllRolePermissions(id: string): Promise<string[]> {
-  const keys: string[] = []
-  let cursor = ''
-  for (let page = 0; page < MAX_ROLE_PERMISSION_PAGES; page += 1) {
-    const result = await listRolePermissions(id, cursor, 100)
-    keys.push(...result.items)
-    const next = result.next_cursor
-    if (next === '' || next === null || next === undefined || Number(next) === 0) {
-      break
-    }
-    cursor = String(next)
-  }
-  return keys
+  return collectPages((cursor) => listRolePermissions(id, cursor, 100), MAX_ROLE_PERMISSION_PAGES)
 }

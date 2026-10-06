@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 
+import { isTerminalCursor } from '@/api/cursor'
 import type { Page } from '@/api/types'
 
 export interface CursorList<T> {
@@ -38,11 +39,10 @@ export function useCursorList<T>(
     try {
       const page = await fetcher(cursor.value, limit)
       items.value.push(...page.items)
-      const next = page.next_cursor
-      if (next === '' || next === null || next === undefined || Number(next) === 0) {
+      if (isTerminalCursor(page.next_cursor)) {
         finished.value = true
       } else {
-        cursor.value = String(next)
+        cursor.value = String(page.next_cursor)
       }
     } finally {
       loading.value = false

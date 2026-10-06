@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { collectPages, toPage } from '@/api/cursor'
 import type {
   EffectivePasswordPolicy,
   LoginActivity,
@@ -54,10 +55,18 @@ export async function regenerateBackupCodes(password: string): Promise<string[]>
   return data.backup_codes ?? []
 }
 
-/** `GET /me/passkeys` — the caller's registered passkey identifiers. */
+/**
+ * `GET /me/passkeys` — the caller's registered passkey identifiers, walking every
+ * page. v0.5.0 pages are ordered by credential id (lexicographic), not by
+ * registration order, so callers must not rely on the previous ordering.
+ */
 export async function fetchPasskeys(): Promise<Passkey[]> {
-  const { data } = await http.get<Passkey[]>('/me/passkeys')
-  return data
+  return collectPages(async (cursor) => {
+    const { data } = await http.get<Page<Passkey> | Passkey[]>('/me/passkeys', {
+      params: cursor === '' ? undefined : { cursor },
+    })
+    return toPage(data)
+  })
 }
 
 /** `POST /me/passkeys/register/begin` — returns the WebAuthn creation options under `publicKey`. */
@@ -76,10 +85,17 @@ export async function deletePasskey(credentialId: string): Promise<void> {
   await http.delete(`/me/passkeys/${encodeURIComponent(credentialId)}`)
 }
 
-/** `GET /me/sessions` — active refresh sessions (not cursor-paginated). */
+/**
+ * `GET /me/sessions` — active, unexpired refresh sessions of the bearer user,
+ * ordered by `(created_at, id)` ascending and walked to the last page.
+ */
 export async function fetchSessions(): Promise<SessionInfo[]> {
-  const { data } = await http.get<SessionInfo[]>('/me/sessions')
-  return data
+  return collectPages(async (cursor) => {
+    const { data } = await http.get<Page<SessionInfo> | SessionInfo[]>('/me/sessions', {
+      params: cursor === '' ? undefined : { cursor },
+    })
+    return toPage(data)
+  })
 }
 
 /** `DELETE /me/sessions/{id}` — revokes one session. */
@@ -87,10 +103,14 @@ export async function revokeSession(sessionId: string): Promise<void> {
   await http.delete(`/me/sessions/${encodeURIComponent(sessionId)}`)
 }
 
-/** `GET /me/activity` — numeric-cursor page of the caller's login attempts. */
+/**
+ * `GET /me/activity` — descending page of the caller's login attempts. The
+ * cursor is opaque: v0.5.0 returns a decimal string and terminates with `""`,
+ * so it is passed back unchanged (never coerced to a number).
+ */
 export async function fetchLoginActivity(cursor: string, limit: number): Promise<Page<LoginActivity>> {
   const { data } = await http.get<Page<LoginActivity>>('/me/activity', {
-    params: { cursor: Number(cursor) || 0, limit },
+    params: cursor === '' ? { limit } : { cursor, limit },
   })
   return data
 }

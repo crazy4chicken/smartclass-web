@@ -14,9 +14,9 @@ export interface ProblemDetails {
 
 /**
  * Cursor-paginated envelope returned by every collection endpoint.
- * `next_cursor` is an opaque string for most endpoints; numeric-cursor endpoints
- * (audit, login activity) use a non-negative integer. An empty string / `0`
- * means there is no next page.
+ * `next_cursor` is an opaque key: pass it back verbatim and stop only on the
+ * terminal value — `""` since teamusers v0.5.0, the number `0` on legacy
+ * releases. Never parse or coerce it into a page number.
  */
 export interface Page<T> {
   items: T[]

@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { collectPages, toPage } from '@/api/cursor'
 import type {
   BatchResults,
   Credential,
@@ -114,9 +115,18 @@ export function createUserCredential(
     .then((response) => response.data)
 }
 
-/** `GET /users/{id}/sessions` — returns a bare array, not a cursor page. */
+/**
+ * `GET /users/{id}/sessions` — active, unexpired sessions of the path user,
+ * ordered by `(created_at, id)` ascending. v0.5.0 wraps them in a cursor page;
+ * the legacy bare array is still accepted while deployments overlap.
+ */
 export function listUserSessions(id: string): Promise<SessionInfo[]> {
-  return http.get<SessionInfo[]>(`/users/${id}/sessions`).then((response) => response.data)
+  return collectPages(async (cursor) => {
+    const response = await http.get<Page<SessionInfo> | SessionInfo[]>(`/users/${id}/sessions`, {
+      params: cursor === '' ? undefined : { cursor },
+    })
+    return toPage(response.data)
+  })
 }
 
 /** `DELETE /users/{id}/sessions/{sid}` — revokes one device session. */

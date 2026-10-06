@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 
+import { collectPages } from '@/api/cursor'
 import type { Group, Team } from '@/api/types'
 import { useCursorList } from '@/composables/useCursorList'
 import { errorMessage } from '@/utils/error'
@@ -28,17 +29,7 @@ const teamNames = computed(() => new Map(teams.value.map((team) => [team.id, tea
 async function loadAllTeams(): Promise<void> {
   teamsLoading.value = true
   try {
-    const collected: Team[] = []
-    let cursor = ''
-    for (let page = 0; page < MAX_TEAM_PAGES; page += 1) {
-      const response = await listTeams(cursor, 100)
-      collected.push(...response.items)
-      const next = response.next_cursor
-      if (next === '' || next === null || next === undefined || Number(next) === 0) {
-        break
-      }
-      cursor = String(next)
-    }
+    const collected = await collectPages((cursor) => listTeams(cursor, 100), MAX_TEAM_PAGES)
     teams.value = collected
     if (selectedTeamId.value === '' && collected.length > 0) {
       selectedTeamId.value = collected[0].id
