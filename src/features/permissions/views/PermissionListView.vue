@@ -8,6 +8,7 @@ import { useCursorList } from '@/composables/useCursorList'
 import type { Permission } from '@/api/types'
 import { errorMessage } from '@/utils/error'
 import { listPermissions, registerPermission } from '../api'
+import { permissionKeyError, wildcardSuggestions } from '../grammar'
 
 const keyword = ref('')
 const { items, loading, finished, loadMore, reload } = useCursorList<Permission>(listPermissions)
@@ -52,12 +53,26 @@ const rules: FormRules = {
   key: [
     { required: true, message: '请输入权限 key', trigger: 'blur' },
     {
-      pattern: /^!?[^:\s]+:[^:\s]+:[^:\s]+$/,
-      message: '需符合 resource:action:scope 格式，可用 ! 前缀表示拒绝',
+      validator: (_rule: unknown, value: unknown, callback: (error?: string | Error) => void) => {
+        const reason = permissionKeyError(String(value ?? ''))
+        if (reason) {
+          callback(new Error(reason))
+          return
+        }
+        callback()
+      },
       trigger: 'blur',
     },
   ],
   registeredBy: [{ required: true, message: '请输入注册方名称', trigger: 'blur' }],
+}
+
+/** Resource of the key being typed, used to offer its wildcard variants. */
+const formResource = computed(() => form.key.trim().replace(/^!/, '').split(':')[0] ?? '')
+const formWildcards = computed(() => wildcardSuggestions(formResource.value))
+
+function applyWildcard(key: string): void {
+  form.key = key
 }
 
 function openRegister(item?: Permission): void {
@@ -130,7 +145,17 @@ async function submit(): Promise<void> {
     <el-dialog v-model="dialogVisible" title="注册/更新权限" width="560px" :close-on-click-modal="false">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" @submit.prevent>
         <el-form-item label="权限 key" prop="key">
-          <el-input v-model="form.key" placeholder="resource:action:scope，如 iam:users:any" />
+          <el-input v-model="form.key" placeholder="resource:action:scope，如 iam:users:any 或 orders:*:any" />
+          <div class="key-hint">
+            支持通配符：action 段可写 <code>*</code>，scope 段可写 <code>own</code>/<code>team</code>/<code>any</code>/<code>*</code>；
+            resource 段不支持 <code>*</code>；<code>iam</code> 只允许 <code>:any</code>（或 teams/groups/roles/bindings 的 <code>:team</code>）。
+          </div>
+          <div v-if="formWildcards.length" class="key-suggestions">
+            <span class="key-suggestions-label">通配写法：</span>
+            <el-button v-for="key in formWildcards" :key="key" link type="primary" size="small" @click="applyWildcard(key)">
+              {{ key }}
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="注册方" prop="registeredBy">
           <el-input v-model="form.registeredBy" placeholder="注册该权限的服务名，如 orders-service" />
@@ -167,6 +192,34 @@ async function submit(): Promise<void> {
 
 .deny-tag {
   margin-right: 6px;
+}
+
+.key-hint {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.key-hint code,
+.key-suggestions code {
+  padding: 0 3px;
+  font-family: var(--el-font-family-mono, monospace);
+  background: var(--el-fill-color-light);
+  border-radius: 3px;
+}
+
+.key-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.key-suggestions-label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .list-footer {

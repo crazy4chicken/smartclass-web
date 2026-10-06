@@ -53,3 +53,37 @@ export async function deleteRole(id: string): Promise<void> {
 export async function setRolePermissions(id: string, permissionKeys: string[]): Promise<void> {
   await http.put(`/roles/${id}/permissions`, { permission_keys: permissionKeys })
 }
+
+/** Hard cap on pages walked by {@link listAllRolePermissions} to avoid an endless loop. */
+const MAX_ROLE_PERMISSION_PAGES = 50
+
+/**
+ * `GET /roles/{id}/permissions` — one cursor page of the role's assigned keys in
+ * ascending order, each optionally prefixed with `!` for a deny.
+ */
+export async function listRolePermissions(
+  id: string,
+  cursor = '',
+  limit = 100,
+): Promise<Page<string>> {
+  const { data } = await http.get<Page<string>>(`/roles/${id}/permissions`, {
+    params: { cursor, limit },
+  })
+  return data
+}
+
+/** `GET /roles/{id}/permissions` — every page, used to pre-select the dialog. */
+export async function listAllRolePermissions(id: string): Promise<string[]> {
+  const keys: string[] = []
+  let cursor = ''
+  for (let page = 0; page < MAX_ROLE_PERMISSION_PAGES; page += 1) {
+    const result = await listRolePermissions(id, cursor, 100)
+    keys.push(...result.items)
+    const next = result.next_cursor
+    if (next === '' || next === null || next === undefined || Number(next) === 0) {
+      break
+    }
+    cursor = String(next)
+  }
+  return keys
+}
