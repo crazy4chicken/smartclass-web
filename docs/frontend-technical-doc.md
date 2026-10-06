@@ -37,6 +37,12 @@
    IAM_ORIGIN=http://192.168.1.10:8080 DISPATCH_ORIGIN=http://192.168.1.10:8081 FILE_ORIGIN=http://192.168.1.10:8095 pnpm dev
    ```
 
+   文件服务的后端地址也可以用 `VITE_FILE_BASE` 指定（`FILE_ORIGIN` 未设置时生效），这样开发代理与生产构建共用同一个变量：
+
+   ```sh
+   VITE_FILE_BASE=http://192.168.1.10:8095 pnpm dev
+   ```
+
 3. 生产构建与本地预览：
 
    ```sh
@@ -83,11 +89,13 @@
    }
    ```
 
-4. 若不便配置反向代理，也可在构建时通过 `VITE_IAM_BASE`、`VITE_DISPATCH_BASE` 环境变量让前端直连后端地址（要求后端允许跨域）：
+4. 若不便配置反向代理，也可在构建时通过 `VITE_IAM_BASE`、`VITE_DISPATCH_BASE`、`VITE_FILE_BASE` 环境变量让前端直连后端地址（要求后端允许跨域）：
 
    ```sh
-   VITE_IAM_BASE=https://iam.example.com VITE_DISPATCH_BASE=https://dispatch.example.com pnpm build
+   VITE_IAM_BASE=https://iam.example.com VITE_DISPATCH_BASE=https://dispatch.example.com VITE_FILE_BASE=https://files.example.com pnpm build
    ```
+
+   三个变量分别覆盖 IAM、录播调度与文件服务（nsc-filehouse）的后端基址；文件服务仍按服务自身的路径调用（`/api/v1/...`、`/presign/...`、`/healthz`），未设置时使用同源前缀 `/iam-api`、`/dispatch-api`、`/file-api`。
 
 5. teamusers 后端的部署与初始管理员引导见其官方文档：https://crazy4chicken.github.io/nsc-teamusers/
 6. 录播调度的接口与权限说明见其官方文档：https://crazy4chicken.github.io/smartclass-dispatchub/

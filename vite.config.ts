@@ -5,7 +5,12 @@ import { defineConfig } from 'vite'
 
 const iamOrigin = process.env.IAM_ORIGIN || 'http://127.0.0.1:8080'
 const dispatchOrigin = process.env.DISPATCH_ORIGIN || 'http://127.0.0.1:8081'
-const fileOrigin = process.env.FILE_ORIGIN || 'http://127.0.0.1:8095'
+/**
+ * Dev target of `/file-api`. `VITE_FILE_BASE` doubles as the filehouse backend
+ * address so one variable covers both the dev proxy and a production build,
+ * where the client calls that origin directly.
+ */
+const fileOrigin = process.env.FILE_ORIGIN || process.env.VITE_FILE_BASE || 'http://127.0.0.1:8095'
 
 // https://vite.dev/config/
 export default defineConfig({
