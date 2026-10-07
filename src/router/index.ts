@@ -18,6 +18,7 @@ import policiesRoutes from '@/features/policies/routes'
 import rolesRoutes from '@/features/roles/routes'
 import teamsRoutes from '@/features/teams/routes'
 import usersRoutes from '@/features/users/routes'
+import webcamRoutes from '@/features/webcam/routes'
 import AppLayout from '@/layouts/AppLayout.vue'
 import SectionLayout from '@/layouts/SectionLayout.vue'
 import { services } from '@/services/registry'
@@ -137,6 +138,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'iam', component: SectionLayout, children: iamChildren },
       { path: 'hub', component: SectionLayout, children: hubRoutes },
       { path: 'file', component: SectionLayout, children: fileRoutes },
+      { path: 'webcam', component: SectionLayout, children: webcamRoutes },
       ...placeholderRoutes,
     ],
   },
@@ -221,7 +223,11 @@ const HUB_REQUIRED_KEYS: readonly string[] = HUB_AREA_BY_PATH.flatMap(([, action
 function denyAccess(to: RouteLocationNormalizedLoaded | RouteLocationNormalized, required: readonly string[]): false {
   const requirement = required.join(' 或 ')
   if (router.currentRoute.value.matched.length > 0) {
-    ElMessage.error(`无权访问 ${to.fullPath}：需要 ${requirement} 权限`)
+    ElMessage.error({
+      message: `无权访问 ${to.fullPath}：需要 ${requirement} 权限`,
+      duration: 2000,
+      showClose: true,
+    })
   } else {
     setRouteDenial({ path: to.fullPath, required })
   }
@@ -237,6 +243,29 @@ const FILE_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
   ['/file/buckets', ['read', 'write', 'delete', 'manage']],
   ['/file/admin', ['manage']],
 ]
+
+/**
+ * `/webcam` sections mapped to the `cam:*` actions that may open them, mirroring
+ * `src/features/webcam/routes.ts`. The device console needs a read or manage grant, the
+ * record pages only a read grant, and the health page any of the three.
+ */
+const WEBCAM_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['/webcam/devices', ['read', 'manage', 'control']],
+  ['/webcam/streams', ['read']],
+  ['/webcam/photos', ['read']],
+  ['/webcam/health', ['read', 'manage', 'control']],
+]
+
+/** First webcam section the user may open, in sidebar order; `null` when they hold no cam key. */
+function firstAllowedWebcamPath(auth: HubAccess): string | null {
+  const entry = WEBCAM_AREA_BY_PATH.find(([, actions]) => actions.some((action) => auth.hasGrant('cam', action)))
+  return entry?.[0] ?? null
+}
+
+/** Every `cam:*` action the console accepts, as the permission keys that would allow it. */
+const WEBCAM_REQUIRED_KEYS: readonly string[] = WEBCAM_AREA_BY_PATH.flatMap(([, actions]) => actions)
+  .filter((action, index, all) => all.indexOf(action) === index)
+  .map((action) => `cam:${action}:any`)
 
 /** First filehouse section the user may open; `/file/usage` is open to any caller. */
 function firstAllowedFilePath(auth: HubAccess): string {
@@ -303,6 +332,33 @@ router.beforeEach(async (to) => {
       }
       if (actions && !actions.some((action) => auth.hasGrant('dispatch', action))) {
         return denyAccess(to, actions.map((action) => `dispatch:${action}:any`))
+      }
+      clearRouteDenial()
+      return true
+    }
+    if (to.path === '/webcam' || to.path.startsWith('/webcam/')) {
+      if (!auth.permissionsLoaded) {
+        await auth.fetchPermissions().catch(() => undefined)
+      }
+      if (!auth.permissionsLoaded) {
+        // Same as `/file` and `/hub`: an unreadable grant set must not redirect anywhere.
+        clearRouteDenial()
+        return true
+      }
+      const actions = WEBCAM_AREA_BY_PATH.find(
+        ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
+      )?.[1]
+      const allowed = firstAllowedWebcamPath(auth)
+      if (!allowed) {
+        // No cam grant at all: the console has no page the caller may read.
+        return denyAccess(to, WEBCAM_REQUIRED_KEYS)
+      }
+      if (to.path === '/webcam') {
+        clearRouteDenial()
+        return { path: allowed }
+      }
+      if (actions && !actions.some((action) => auth.hasGrant('cam', action))) {
+        return denyAccess(to, actions.map((action) => `cam:${action}:any`))
       }
       clearRouteDenial()
       return true

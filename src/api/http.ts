@@ -23,6 +23,9 @@ const DISPATCH_BASE = import.meta.env.VITE_DISPATCH_BASE || '/dispatch-api'
 /** nsc-filehouse base; requests keep the service's own paths (`/api/v1/...`, `/presign/...`, `/healthz`). */
 const FILE_BASE = import.meta.env.VITE_FILE_BASE || '/file-api'
 
+/** smartclass-webcam-server base; requests keep the service's own paths (`/api/...`, `/healthz`). */
+const WEBCAM_BASE = import.meta.env.VITE_WEBCAM_BASE || '/webcam-api'
+
 /**
  * Default request timeout shared by every client. Without one, a request swallowed by a
  * broken proxy hangs forever - and the router guard awaits the permission fetch, so a
@@ -183,6 +186,9 @@ export const hubHttp = createClient(DISPATCH_BASE)
 
 /** nsc-filehouse client; call sites pass the service's own paths (`/api/v1/...`, `/presign/...`). */
 export const fileHttp = createClient(FILE_BASE)
+
+/** smartclass-webcam-server client; call sites pass the service's own paths (`/api/...`, `/healthz`). */
+export const webcamHttp = createClient(WEBCAM_BASE)
 
 
 /** In-flight refresh shared by concurrent 401s (single flight). */

@@ -71,6 +71,12 @@ const HUB_SECTIONS: Section[] = [
   { title: '服务健康', path: '/hub/health', icon: Odometer, system: 'dispatch', actions: ['read', 'manage', 'control'] },
 ]
 
+/** Section navigation shown while the route lives under `/webcam` (smartclass-webcam-server). */
+const WEBCAM_SECTIONS: Section[] = [
+  { title: '设备', path: '/webcam/devices', icon: Monitor, system: 'cam', actions: ['read', 'manage', 'control'] },
+  { title: '服务健康', path: '/webcam/health', icon: Odometer, system: 'cam', actions: ['read', 'manage', 'control'] },
+]
+
 /** Section navigation shown while the route lives under `/file` (nsc-filehouse). */
 const FILE_SECTIONS: Section[] = [
   { title: '文件桶', path: '/file/buckets', icon: Box, system: 'filehouse', actions: ['read', 'write', 'delete', 'manage'] },
@@ -92,6 +98,7 @@ const activeServicePath = computed(
 const isIamArea = computed(() => route.path === '/iam' || route.path.startsWith('/iam/'))
 const isHubArea = computed(() => route.path === '/hub' || route.path.startsWith('/hub/'))
 const isFileArea = computed(() => route.path === '/file' || route.path.startsWith('/file/'))
+const isWebcamArea = computed(() => route.path === '/webcam' || route.path.startsWith('/webcam/'))
 
 /** Sections of the area the current route belongs to; empty outside the consoles. */
 const activeSections = computed<Section[]>(() => {
@@ -104,6 +111,9 @@ const activeSections = computed<Section[]>(() => {
   if (isFileArea.value) {
     return FILE_SECTIONS
   }
+  if (isWebcamArea.value) {
+    return WEBCAM_SECTIONS
+  }
   return []
 })
 
@@ -111,7 +121,10 @@ const asideTitle = computed(() => {
   if (isIamArea.value) {
     return '身份与访问管理'
   }
-  return isHubArea.value ? '录播调度' : '文件服务'
+  if (isHubArea.value) {
+    return '录播调度'
+  }
+  return isFileArea.value ? '文件服务' : '设备管理'
 })
 
 /** Sections the current user actually holds grants for. */
@@ -227,7 +240,7 @@ async function onUserCommand(command: string): Promise<void> {
     </el-header>
 
     <el-container class="app-body">
-      <el-aside v-if="isIamArea || isHubArea || isFileArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
+      <el-aside v-if="isIamArea || isHubArea || isFileArea || isWebcamArea" :width="collapsed ? '64px' : '220px'" class="app-aside">
         <div v-if="!collapsed" class="app-aside-title">{{ asideTitle }}</div>
         <el-menu
           class="app-aside-menu"

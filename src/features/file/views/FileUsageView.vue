@@ -1,21 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
 import { errorMessage } from '@/utils/error'
-import { fetchLiveness, fetchMePermissions, fetchReadiness, fetchUsage } from '@/features/file/api'
-import type { MePermissions, ProbeResult, Usage } from '@/features/file/api'
+import { fetchLiveness, fetchReadiness, fetchUsage } from '@/features/file/api'
+import type { ProbeResult, Usage } from '@/features/file/api'
 
 const usage = ref<Usage | null>(null)
-const permissions = ref<MePermissions | null>(null)
 const liveness = ref<ProbeResult | null>(null)
 const readiness = ref<ProbeResult | null>(null)
 const readinessError = ref('')
 const loading = ref(false)
-
-const allowKeys = computed(() => (permissions.value?.permissions ?? []).filter((key) => !key.startsWith('!')))
-const denyKeys = computed(() => (permissions.value?.permissions ?? []).filter((key) => key.startsWith('!')))
 
 function formatBytes(value: number): string {
   if (value <= 0) {
@@ -38,7 +34,6 @@ async function refresh(): Promise<void> {
   readinessError.value = ''
   try {
     usage.value = await fetchUsage()
-    permissions.value = await fetchMePermissions()
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -110,18 +105,6 @@ onMounted(() => {
         </el-table-column>
       </el-table>
     </el-card>
-
-    <el-card shadow="never">
-      <template #header>
-        我的 filehouse 权限
-        <span v-if="permissions" class="field-hint">{{ permissions.subject.kind }} · {{ permissions.subject.id }}</span>
-      </template>
-      <div class="keys">
-        <el-tag v-for="key in allowKeys" :key="key" type="success" class="key-tag">{{ key }}</el-tag>
-        <el-tag v-for="key in denyKeys" :key="key" type="danger" class="key-tag">{{ key }}</el-tag>
-        <span v-if="!permissions" class="field-hint">加载中…</span>
-      </div>
-    </el-card>
   </div>
 </template>
 
@@ -164,20 +147,5 @@ onMounted(() => {
 .probe-row {
   display: flex;
   gap: 8px;
-}
-
-.keys {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.key-tag {
-  font-family: monospace;
-}
-
-.field-hint {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 </style>

@@ -11,6 +11,12 @@ const dispatchOrigin = process.env.DISPATCH_ORIGIN || 'http://127.0.0.1:8081'
  * where the client calls that origin directly.
  */
 const fileOrigin = process.env.FILE_ORIGIN || process.env.VITE_FILE_BASE || 'http://127.0.0.1:8095'
+/**
+ * Dev target of `/webcam-api`. `VITE_WEBCAM_BASE` doubles as the webcam-server backend
+ * address so one variable covers both the dev proxy and a production build, where the
+ * client calls that origin directly.
+ */
+const webcamOrigin = process.env.WEBCAM_ORIGIN || process.env.VITE_WEBCAM_BASE || 'http://127.0.0.1:8090'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -38,6 +44,12 @@ export default defineConfig({
         target: fileOrigin,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/file-api/, ''),
+      },
+      // smartclass-webcam-server keeps its own paths (`/api/...`, `/healthz`, `/readyz`).
+      '/webcam-api': {
+        target: webcamOrigin,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/webcam-api/, ''),
       },
     },
   },

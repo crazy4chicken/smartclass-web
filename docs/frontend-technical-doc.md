@@ -27,20 +27,20 @@
    pnpm dev
    ```
 
-2. 开发模式下前端将 `/iam-api` 开头的请求代理到 IAM 后端，默认目标为 `http://127.0.0.1:8080`；`/dispatch-api` 开头的请求代理到录播调度服务，默认目标为 `http://127.0.0.1:8081`；`/file-api` 开头的请求代理到文件服务，默认目标为 `http://127.0.0.1:8095`。后端在其他地址时通过环境变量覆盖：
+2. 开发模式下前端将 `/iam-api` 开头的请求代理到 IAM 后端，默认目标为 `http://127.0.0.1:8080`；`/dispatch-api` 开头的请求代理到录播调度服务，默认目标为 `http://127.0.0.1:8081`；`/file-api` 开头的请求代理到文件服务，默认目标为 `http://127.0.0.1:8095`；`/webcam-api` 开头的请求代理到设备管理服务（smartclass-webcam-server），默认目标为 `http://127.0.0.1:8090`。后端在其他地址时通过环境变量覆盖：
 
    ```sh
    # Windows (cmd)
-   set IAM_ORIGIN=http://192.168.1.10:8080 && set DISPATCH_ORIGIN=http://192.168.1.10:8081 && set FILE_ORIGIN=http://192.168.1.10:8095 && pnpm dev
+   set IAM_ORIGIN=http://192.168.1.10:8080 && set DISPATCH_ORIGIN=http://192.168.1.10:8081 && set FILE_ORIGIN=http://192.168.1.10:8095 && set WEBCAM_ORIGIN=http://192.168.1.10:8090 && pnpm dev
 
    # Linux / macOS
-   IAM_ORIGIN=http://192.168.1.10:8080 DISPATCH_ORIGIN=http://192.168.1.10:8081 FILE_ORIGIN=http://192.168.1.10:8095 pnpm dev
+   IAM_ORIGIN=http://192.168.1.10:8080 DISPATCH_ORIGIN=http://192.168.1.10:8081 FILE_ORIGIN=http://192.168.1.10:8095 WEBCAM_ORIGIN=http://192.168.1.10:8090 pnpm dev
    ```
 
-   文件服务的后端地址也可以用 `VITE_FILE_BASE` 指定（`FILE_ORIGIN` 未设置时生效），这样开发代理与生产构建共用同一个变量：
+   文件服务与设备管理服务的后端地址也可以分别用 `VITE_FILE_BASE`、`VITE_WEBCAM_BASE` 指定（`FILE_ORIGIN`、`WEBCAM_ORIGIN` 未设置时生效），这样开发代理与生产构建共用同一个变量：
 
    ```sh
-   VITE_FILE_BASE=http://192.168.1.10:8095 pnpm dev
+   VITE_FILE_BASE=http://192.168.1.10:8095 VITE_WEBCAM_BASE=http://192.168.1.10:8090 pnpm dev
    ```
 
 3. 生产构建与本地预览：
@@ -56,7 +56,7 @@
 
 2. 将 `dist/` 托管到任意静态文件服务器。因路由使用 history 模式，服务器需配置 SPA 回退：所有未命中的路径返回 `index.html`。
 
-3. 前端默认以相对路径 `/iam-api` 调用 IAM 后端、以 `/dispatch-api` 调用录播调度服务、以 `/file-api` 调用文件服务（三者都保留服务自身的路径，如 `/api/v1`、`/healthz`），静态服务器需将三个前缀分别反向代理到对应服务（并去掉前缀）。nginx 参考配置：
+3. 前端默认以相对路径 `/iam-api` 调用 IAM 后端、以 `/dispatch-api` 调用录播调度服务、以 `/file-api` 调用文件服务、以 `/webcam-api` 调用设备管理服务（四者都保留服务自身的路径，如 `/api/v1`、`/api`、`/healthz`），静态服务器需将四个前缀分别反向代理到对应服务（并去掉前缀）。nginx 参考配置：
 
    ```nginx
    server {
@@ -83,19 +83,25 @@
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
        }
 
+       location /webcam-api/ {
+           proxy_pass http://127.0.0.1:8090/;
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       }
+
        location / {
            try_files $uri $uri/ /index.html;
        }
    }
    ```
 
-4. 若不便配置反向代理，也可在构建时通过 `VITE_IAM_BASE`、`VITE_DISPATCH_BASE`、`VITE_FILE_BASE` 环境变量让前端直连后端地址（要求后端允许跨域）：
+4. 若不便配置反向代理，也可在构建时通过 `VITE_IAM_BASE`、`VITE_DISPATCH_BASE`、`VITE_FILE_BASE`、`VITE_WEBCAM_BASE` 环境变量让前端直连后端地址（要求后端允许跨域）：
 
    ```sh
-   VITE_IAM_BASE=https://iam.example.com VITE_DISPATCH_BASE=https://dispatch.example.com VITE_FILE_BASE=https://files.example.com pnpm build
+   VITE_IAM_BASE=https://iam.example.com VITE_DISPATCH_BASE=https://dispatch.example.com VITE_FILE_BASE=https://files.example.com VITE_WEBCAM_BASE=https://webcam.example.com pnpm build
    ```
 
-   三个变量分别覆盖 IAM、录播调度与文件服务（nsc-filehouse）的后端基址；文件服务仍按服务自身的路径调用（`/api/v1/...`、`/presign/...`、`/healthz`），未设置时使用同源前缀 `/iam-api`、`/dispatch-api`、`/file-api`。
+   四个变量分别覆盖 IAM、录播调度、文件服务（nsc-filehouse）与设备管理（smartclass-webcam-server）的后端基址；各服务仍按自身的路径调用（如 `/api/v1/...`、`/presign/...`、`/api/devices`、`/healthz`），未设置时使用同源前缀 `/iam-api`、`/dispatch-api`、`/file-api`、`/webcam-api`。
 
 5. teamusers 后端的部署与初始管理员引导见其官方文档：https://crazy4chicken.github.io/nsc-teamusers/
 6. 录播调度的接口与权限说明见其官方文档：https://crazy4chicken.github.io/smartclass-dispatchub/

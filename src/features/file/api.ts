@@ -109,12 +109,6 @@ export interface PresignedLink {
   expires_at: string
 }
 
-/** `GET /api/v1/me/permissions` — the caller's filehouse grants, denies prefixed with `!`. */
-export interface MePermissions {
-  permissions: string[]
-  subject: { id: string; kind: string }
-}
-
 /** `GET /api/v1/usage` — the caller's totals plus a per-bucket breakdown. */
 export interface Usage {
   subject: { id: string; kind: string }
@@ -348,11 +342,6 @@ export async function mintPresign(payload: PresignPayload, idempotencyKey?: stri
 // ---------------------------------------------------------------------------
 // Self-service, admin and probes
 // ---------------------------------------------------------------------------
-
-export async function fetchMePermissions(): Promise<MePermissions> {
-  const { data } = await fileHttp.get<MePermissions>('/api/v1/me/permissions')
-  return data
-}
 
 export async function fetchUsage(): Promise<Usage> {
   const { data } = await fileHttp.get<Usage>('/api/v1/usage')
