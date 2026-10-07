@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalized, RouteLocationNormalizedLoaded, RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
+import { clearRouteDenial, setRouteDenial } from '@/composables/useRouteDenial'
 import auditRoutes from '@/features/audit/routes'
 import authRoutes from '@/features/auth/routes'
 import bindingsRoutes from '@/features/bindings/routes'
@@ -205,6 +207,27 @@ function firstAllowedHubPath(auth: HubAccess): string | null {
   return entry?.[0] ?? null
 }
 
+/** Every `dispatch:*` action any hub section accepts, as the permission keys that would allow the console. */
+const HUB_REQUIRED_KEYS: readonly string[] = HUB_AREA_BY_PATH.flatMap(([, actions]) => actions)
+  .filter((action, index, all) => all.indexOf(action) === index)
+  .map((action) => `dispatch:${action}:any`)
+
+/**
+ * Refuses a navigation and says why. The guard never redirects on an authorization
+ * failure: a page already on screen stays exactly where it is and gets the reason as a
+ * message, while a refused hard load fills the screen with the same reason (App.vue)
+ * instead of quietly landing the operator somewhere else.
+ */
+function denyAccess(to: RouteLocationNormalizedLoaded | RouteLocationNormalized, required: readonly string[]): false {
+  const requirement = required.join(' 或 ')
+  if (router.currentRoute.value.matched.length > 0) {
+    ElMessage.error(`无权访问 ${to.fullPath}：需要 ${requirement} 权限`)
+  } else {
+    setRouteDenial({ path: to.fullPath, required })
+  }
+  return false
+}
+
 /**
  * `/file` sections mapped to the `filehouse:*` actions that may open them, mirroring
  * `src/features/file/routes.ts`. `/file/usage` carries no `actions` because the
@@ -224,9 +247,12 @@ function firstAllowedFilePath(auth: HubAccess): string {
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isAuthenticated) {
+    clearRouteDenial()
+    ElMessage.warning('请先登录后再访问该页面')
     return { path: '/iam/login', query: { redirect: to.fullPath } }
   }
   if (to.path === '/iam/login' && auth.isAuthenticated) {
+    clearRouteDenial()
     return { path: '/iam' }
   }
   if (auth.isAuthenticated && !to.meta.public) {
@@ -237,14 +263,20 @@ router.beforeEach(async (to) => {
       if (!auth.permissionsLoaded) {
         // The grant set could not be read (service unreachable). Keep the page and let it
         // surface the API error instead of bouncing the user into another area.
+        clearRouteDenial()
         return true
       }
       const actions = FILE_AREA_BY_PATH.find(
         ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
       )?.[1]
-      if (to.path === '/file' || (actions && !actions.some((action) => auth.hasGrant('filehouse', action)))) {
+      if (to.path === '/file') {
+        clearRouteDenial()
         return { path: firstAllowedFilePath(auth) }
       }
+      if (actions && !actions.some((action) => auth.hasGrant('filehouse', action))) {
+        return denyAccess(to, actions.map((action) => `filehouse:${action}:any`))
+      }
+      clearRouteDenial()
       return true
     }
     if (to.path === '/hub' || to.path.startsWith('/hub/')) {
@@ -253,16 +285,26 @@ router.beforeEach(async (to) => {
       }
       if (!auth.permissionsLoaded) {
         // Same as `/file`: an unreadable grant set must not redirect into the IAM area.
+        clearRouteDenial()
         return true
       }
+      const actions = HUB_AREA_BY_PATH.find(
+        ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
+      )?.[1]
       const allowed = firstAllowedHubPath(auth)
       if (!allowed) {
-        return { path: firstAllowedIamPath(auth) }
+        // No dispatch grant at all: the console has no page the caller may read, and unlike
+        // `/iam` and `/file` there is no always-available section to land on.
+        return denyAccess(to, HUB_REQUIRED_KEYS)
       }
-      const actions = HUB_AREA_BY_PATH.find(([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`))?.[1]
-      if (to.path === '/hub' || (actions && !actions.some((action) => auth.hasGrant('dispatch', action)))) {
+      if (to.path === '/hub') {
+        clearRouteDenial()
         return { path: allowed }
       }
+      if (actions && !actions.some((action) => auth.hasGrant('dispatch', action))) {
+        return denyAccess(to, actions.map((action) => `dispatch:${action}:any`))
+      }
+      clearRouteDenial()
       return true
     }
     const areas = iamAreasForPath(to.path)
@@ -272,16 +314,19 @@ router.beforeEach(async (to) => {
       }
       if (!auth.permissionsLoaded) {
         // An unreadable grant set keeps every IAM page reachable for the same reason.
+        clearRouteDenial()
         return true
       }
       if (to.path === '/iam') {
+        clearRouteDenial()
         return { path: firstAllowedIamPath(auth) }
       }
       if (areas && !areas.some((area) => auth.hasIamArea(area))) {
-        return { path: firstAllowedIamPath(auth) }
+        return denyAccess(to, areas.map((area) => `iam:${area}:any`))
       }
     }
   }
+  clearRouteDenial()
   return true
 })
 

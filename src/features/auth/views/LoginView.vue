@@ -70,6 +70,7 @@ async function onSubmit(): Promise<void> {
         return
       }
       sessionStorage.setItem(CHANGE_TOKEN_KEY, changeToken)
+      ElMessage.warning('当前密码是临时密码，需要先修改密码才能继续')
       await router.push({ path: '/iam/password/change', query: redirect === '/iam' ? {} : { redirect } })
       return
     }

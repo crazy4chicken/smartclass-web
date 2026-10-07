@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios'
+import { ElMessage } from 'element-plus'
 
 import type { ProblemDetails, TokenPair } from '@/api/types'
 import { requestStepUp } from '@/features/auth/stepup'
@@ -218,6 +219,9 @@ async function forceLogin(): Promise<void> {
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   syncTokensIntoStore(null, null)
   if (router.currentRoute.value.path !== '/iam/login') {
+    // The session is over, so the sign-in page is the only useful place left - say why
+    // instead of moving the operator there without a word.
+    ElMessage.warning('登录状态已失效，请重新登录')
     await router.push('/iam/login')
   }
 }

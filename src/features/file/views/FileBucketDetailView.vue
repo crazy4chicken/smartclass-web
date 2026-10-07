@@ -38,6 +38,8 @@ const canShare = computed(() => auth.hasGrant('filehouse', 'share'))
 
 const bucketName = computed(() => String(route.params.bucket ?? ''))
 const bucket = ref<Bucket | null>(null)
+/** Why the bucket metadata could not be loaded; rendered in place above the object table. */
+const bucketError = ref<string | null>(null)
 const prefix = ref('')
 
 const { items, loading, finished, loadMore, reload } = useCursorList<FileObject>((cursor, limit) =>
@@ -60,13 +62,14 @@ function formatBytes(value: number): string {
 async function loadBucket(): Promise<void> {
   try {
     bucket.value = await getBucket(bucketName.value)
+    bucketError.value = null
   } catch (error) {
-    ElMessage.error(errorMessage(error))
-    // Only a bucket that really does not exist sends the operator back to the list;
-    // a transient service failure keeps the page and its error visible.
-    if (isApiError(error) && error.status === 404) {
-      await router.push('/file/buckets')
-    }
+    // Reported on this page and nowhere else: a missing or unreachable bucket must not
+    // move the operator to another route on its own.
+    bucketError.value =
+      isApiError(error) && error.status === 404
+        ? `桶 ${bucketName.value} 不存在或已被删除`
+        : errorMessage(error)
   }
 }
 
@@ -256,6 +259,17 @@ onMounted(() => {
       </div>
     </div>
 
+    <el-alert
+      v-if="bucketError"
+      class="bucket-error"
+      type="error"
+      :closable="false"
+      show-icon
+      :title="bucketError"
+    >
+      <el-button link type="primary" @click="router.push('/file/buckets')">返回桶列表</el-button>
+    </el-alert>
+
     <el-table v-loading="loading" :data="items" border stripe>
       <el-table-column prop="key" label="对象键" min-width="280" show-overflow-tooltip />
       <el-table-column label="大小" width="110">
@@ -373,6 +387,10 @@ onMounted(() => {
 
 .bucket-name {
   font-family: monospace;
+}
+
+.bucket-error {
+  margin-bottom: 12px;
 }
 
 .toolbar-actions {
