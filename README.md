@@ -18,3 +18,4 @@
 | 文档 | 说明 |
 | --- | --- |
 | [前端技术文档](docs/frontend-technical-doc.md) | 技术栈、环境要求、启动方法与部署指南 |
+| [权限批量导入 JSON 规范](docs/permission-import.md) | 权限页「批量导入 JSON」的文件格式、key 语法与校验规则 |
