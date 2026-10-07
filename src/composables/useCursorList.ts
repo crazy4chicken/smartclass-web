@@ -1,7 +1,9 @@
 import { ref, type Ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 import { isTerminalCursor } from '@/api/cursor'
 import type { Page } from '@/api/types'
+import { errorMessage } from '@/utils/error'
 
 export interface CursorList<T> {
   items: Ref<T[]>
@@ -44,6 +46,10 @@ export function useCursorList<T>(
       } else {
         cursor.value = String(page.next_cursor)
       }
+    } catch (error) {
+      // A failed page is reported in place: the list keeps what it has and the cursor
+      // stays put, so the operator can retry instead of staring at an empty table.
+      ElMessage.error(errorMessage(error))
     } finally {
       loading.value = false
     }

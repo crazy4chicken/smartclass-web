@@ -134,8 +134,13 @@ function createClient(baseURL: string): AxiosInstance {
         try {
           await refreshAccessToken()
           return await instance(config)
-        } catch {
-          await forceLogin()
+        } catch (refreshError) {
+          // Only a refresh the service itself rejected means the session is gone. A network
+          // failure, a timeout or a 5xx must not sign the user out - and never navigates:
+          // the original request is rejected so its caller reports the error in place.
+          if (isRefreshRejected(refreshError)) {
+            await forceLogin()
+          }
           return Promise.reject(apiError)
         }
       }
@@ -193,6 +198,19 @@ async function performRefresh(): Promise<string> {
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
   syncTokensIntoStore(data.access_token, data.refresh_token)
   return data.access_token
+}
+
+/**
+ * Whether the refresh endpoint itself rejected the refresh token. Anything else -
+ * no response, a timeout, a 5xx - is a service failure that must not end the
+ * session nor navigate the user away.
+ */
+function isRefreshRejected(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false
+  }
+  const status = error.response?.status ?? 0
+  return status === 401 || status === 403
 }
 
 async function forceLogin(): Promise<void> {

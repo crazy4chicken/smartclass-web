@@ -7,6 +7,7 @@ import type { UploadFile, UploadInstance } from 'element-plus'
 import { CopyDocument, Delete, Download, Link, Refresh, Upload } from '@element-plus/icons-vue'
 
 import { errorMessage } from '@/utils/error'
+import { isApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useCursorList } from '@/composables/useCursorList'
 import {
@@ -61,7 +62,11 @@ async function loadBucket(): Promise<void> {
     bucket.value = await getBucket(bucketName.value)
   } catch (error) {
     ElMessage.error(errorMessage(error))
-    await router.push('/file/buckets')
+    // Only a bucket that really does not exist sends the operator back to the list;
+    // a transient service failure keeps the page and its error visible.
+    if (isApiError(error) && error.status === 404) {
+      await router.push('/file/buckets')
+    }
   }
 }
 

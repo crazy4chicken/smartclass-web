@@ -45,31 +45,20 @@ function diffSummary(diff: unknown): string {
   return String(diff)
 }
 
+/** The list composable reports a failed page itself, so these only drive the filters. */
 async function fetchPage(): Promise<void> {
-  try {
-    await loadMore()
-  } catch (error) {
-    ElMessage.error(errorMessage(error))
-  }
+  await loadMore()
 }
 
 async function onFilter(): Promise<void> {
   teamId.value = teamIdInput.value.trim()
-  try {
-    await reload()
-  } catch (error) {
-    ElMessage.error(errorMessage(error))
-  }
+  await reload()
 }
 
 async function onResetFilter(): Promise<void> {
   teamIdInput.value = ''
   teamId.value = ''
-  try {
-    await reload()
-  } catch (error) {
-    ElMessage.error(errorMessage(error))
-  }
+  await reload()
 }
 
 /** Blob error bodies bypass the shared problem+json parsing, so map documented statuses here. */
