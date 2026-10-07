@@ -32,6 +32,12 @@ const hubRoutes: RouteRecordRaw[] = [
     meta: { title: '课表导入', actions: ['read', 'manage'] },
   },
   {
+    path: 'devices',
+    name: 'hub-devices',
+    component: () => import('@/features/hub/views/HubDevicesView.vue'),
+    meta: { title: '设备', actions: ['read', 'manage', 'control'], system: 'cam' },
+  },
+  {
     path: 'health',
     name: 'hub-health',
     component: () => import('@/features/hub/views/HubHealthView.vue'),

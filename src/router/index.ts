@@ -18,7 +18,6 @@ import policiesRoutes from '@/features/policies/routes'
 import rolesRoutes from '@/features/roles/routes'
 import teamsRoutes from '@/features/teams/routes'
 import usersRoutes from '@/features/users/routes'
-import webcamRoutes from '@/features/webcam/routes'
 import AppLayout from '@/layouts/AppLayout.vue'
 import SectionLayout from '@/layouts/SectionLayout.vue'
 import { services } from '@/services/registry'
@@ -31,8 +30,10 @@ declare module 'vue-router' {
     public?: boolean
     /** Human readable page title used by breadcrumbs and tabs. */
     title?: string
-    /** `dispatch:*` actions that may open the page; read by the guard and the sidebar. */
+    /** Actions that may open the page; read by the guard and the sidebar. */
     actions?: readonly string[]
+    /** Service the actions belong to; `dispatch` when omitted. */
+    system?: string
   }
 }
 
@@ -138,7 +139,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'iam', component: SectionLayout, children: iamChildren },
       { path: 'hub', component: SectionLayout, children: hubRoutes },
       { path: 'file', component: SectionLayout, children: fileRoutes },
-      { path: 'webcam', component: SectionLayout, children: webcamRoutes },
       ...placeholderRoutes,
     ],
   },
@@ -191,28 +191,31 @@ function firstAllowedIamPath(auth: IamAccess): string {
 }
 
 /**
- * `/hub` sections mapped to the `dispatch:*` actions that may open them, mirroring
- * `src/features/hub/routes.ts`. Collection reads need the any-scoped read key while
- * control and manage actions are checked inside each page.
+ * `/hub` sections mapped to the permission system and actions that may open them,
+ * mirroring `src/features/hub/routes.ts`. The console itself is dispatchub's, but the
+ * device section manages smartclass-webcam-server and is therefore gated by `cam:*`.
  */
-const HUB_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ['/hub/sessions', ['read', 'control']],
-  ['/hub/rooms', ['read', 'manage', 'control']],
-  ['/hub/terms', ['read', 'manage']],
-  ['/hub/timetable', ['read', 'manage']],
-  ['/hub/health', ['read', 'manage', 'control']],
+const HUB_AREA_BY_PATH: ReadonlyArray<readonly [string, string, readonly string[]]> = [
+  ['/hub/sessions', 'dispatch', ['read', 'control']],
+  ['/hub/rooms', 'dispatch', ['read', 'manage', 'control']],
+  ['/hub/terms', 'dispatch', ['read', 'manage']],
+  ['/hub/timetable', 'dispatch', ['read', 'manage']],
+  ['/hub/health', 'dispatch', ['read', 'manage', 'control']],
+  ['/hub/devices', 'cam', ['read', 'manage', 'control']],
 ]
 
-/** First dispatch section the user may open, in sidebar order; `null` when they hold no key. */
+/** First section of the console the user may open, in sidebar order; `null` when they hold no key. */
 function firstAllowedHubPath(auth: HubAccess): string | null {
-  const entry = HUB_AREA_BY_PATH.find(([, actions]) => actions.some((action) => auth.hasGrant('dispatch', action)))
+  const entry = HUB_AREA_BY_PATH.find(([, system, actions]) =>
+    actions.some((action) => auth.hasGrant(system, action)),
+  )
   return entry?.[0] ?? null
 }
 
-/** Every `dispatch:*` action any hub section accepts, as the permission keys that would allow the console. */
-const HUB_REQUIRED_KEYS: readonly string[] = HUB_AREA_BY_PATH.flatMap(([, actions]) => actions)
-  .filter((action, index, all) => all.indexOf(action) === index)
-  .map((action) => `dispatch:${action}:any`)
+/** Every action any hub section accepts, as the permission keys that would allow the console. */
+const HUB_REQUIRED_KEYS: readonly string[] = HUB_AREA_BY_PATH.flatMap(([, system, actions]) =>
+  actions.map((action) => `${system}:${action}:any`),
+).filter((key, index, all) => all.indexOf(key) === index)
 
 /**
  * Refuses a navigation and says why. The guard never redirects on an authorization
@@ -243,29 +246,6 @@ const FILE_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
   ['/file/buckets', ['read', 'write', 'delete', 'manage']],
   ['/file/admin', ['manage']],
 ]
-
-/**
- * `/webcam` sections mapped to the `cam:*` actions that may open them, mirroring
- * `src/features/webcam/routes.ts`. The device console needs a read or manage grant, the
- * record pages only a read grant, and the health page any of the three.
- */
-const WEBCAM_AREA_BY_PATH: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ['/webcam/devices', ['read', 'manage', 'control']],
-  ['/webcam/streams', ['read']],
-  ['/webcam/photos', ['read']],
-  ['/webcam/health', ['read', 'manage', 'control']],
-]
-
-/** First webcam section the user may open, in sidebar order; `null` when they hold no cam key. */
-function firstAllowedWebcamPath(auth: HubAccess): string | null {
-  const entry = WEBCAM_AREA_BY_PATH.find(([, actions]) => actions.some((action) => auth.hasGrant('cam', action)))
-  return entry?.[0] ?? null
-}
-
-/** Every `cam:*` action the console accepts, as the permission keys that would allow it. */
-const WEBCAM_REQUIRED_KEYS: readonly string[] = WEBCAM_AREA_BY_PATH.flatMap(([, actions]) => actions)
-  .filter((action, index, all) => all.indexOf(action) === index)
-  .map((action) => `cam:${action}:any`)
 
 /** First filehouse section the user may open; `/file/usage` is open to any caller. */
 function firstAllowedFilePath(auth: HubAccess): string {
@@ -317,12 +297,10 @@ router.beforeEach(async (to) => {
         clearRouteDenial()
         return true
       }
-      const actions = HUB_AREA_BY_PATH.find(
-        ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
-      )?.[1]
+      const entry = HUB_AREA_BY_PATH.find(([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`))
       const allowed = firstAllowedHubPath(auth)
       if (!allowed) {
-        // No dispatch grant at all: the console has no page the caller may read, and unlike
+        // No grant in either system: the console has no page the caller may read, and unlike
         // `/iam` and `/file` there is no always-available section to land on.
         return denyAccess(to, HUB_REQUIRED_KEYS)
       }
@@ -330,35 +308,8 @@ router.beforeEach(async (to) => {
         clearRouteDenial()
         return { path: allowed }
       }
-      if (actions && !actions.some((action) => auth.hasGrant('dispatch', action))) {
-        return denyAccess(to, actions.map((action) => `dispatch:${action}:any`))
-      }
-      clearRouteDenial()
-      return true
-    }
-    if (to.path === '/webcam' || to.path.startsWith('/webcam/')) {
-      if (!auth.permissionsLoaded) {
-        await auth.fetchPermissions().catch(() => undefined)
-      }
-      if (!auth.permissionsLoaded) {
-        // Same as `/file` and `/hub`: an unreadable grant set must not redirect anywhere.
-        clearRouteDenial()
-        return true
-      }
-      const actions = WEBCAM_AREA_BY_PATH.find(
-        ([prefix]) => to.path === prefix || to.path.startsWith(`${prefix}/`),
-      )?.[1]
-      const allowed = firstAllowedWebcamPath(auth)
-      if (!allowed) {
-        // No cam grant at all: the console has no page the caller may read.
-        return denyAccess(to, WEBCAM_REQUIRED_KEYS)
-      }
-      if (to.path === '/webcam') {
-        clearRouteDenial()
-        return { path: allowed }
-      }
-      if (actions && !actions.some((action) => auth.hasGrant('cam', action))) {
-        return denyAccess(to, actions.map((action) => `cam:${action}:any`))
+      if (entry && !entry[2].some((action) => auth.hasGrant(entry[1], action))) {
+        return denyAccess(to, entry[2].map((action) => `${entry[1]}:${action}:any`))
       }
       clearRouteDenial()
       return true
