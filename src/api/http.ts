@@ -23,6 +23,13 @@ const DISPATCH_BASE = import.meta.env.VITE_DISPATCH_BASE || '/dispatch-api'
 /** nsc-filehouse base; requests keep the service's own paths (`/api/v1/...`, `/presign/...`, `/healthz`). */
 const FILE_BASE = import.meta.env.VITE_FILE_BASE || '/file-api'
 
+/**
+ * Default request timeout shared by every client. Without one, a request swallowed by a
+ * broken proxy hangs forever - and the router guard awaits the permission fetch, so a
+ * black-holed `/me/permissions` would freeze navigation with no error at all.
+ */
+const DEFAULT_TIMEOUT_MS = 15_000
+
 /** Endpoints that do not need an Authorization header. */
 const PUBLIC_REQUEST_PATHS = [
   '/auth/login',
@@ -104,7 +111,7 @@ type RetryableConfig = InternalAxiosRequestConfig & { _authRetried?: boolean; _s
  * cannot drift between them.
  */
 function createClient(baseURL: string): AxiosInstance {
-  const instance = axios.create({ baseURL })
+  const instance = axios.create({ baseURL, timeout: DEFAULT_TIMEOUT_MS })
 
   instance.interceptors.request.use((config) => {
     const token = localStorage.getItem(ACCESS_TOKEN_KEY) ?? ''
@@ -192,9 +199,13 @@ function refreshAccessToken(): Promise<string> {
 
 async function performRefresh(): Promise<string> {
   // Bare axios instance on purpose: the instance interceptors must not observe the refresh call.
-  const { data } = await axios.post<TokenPair>(`${IAM_BASE}/auth/refresh`, {
-    refresh_token: localStorage.getItem(REFRESH_TOKEN_KEY) ?? '',
-  })
+  const { data } = await axios.post<TokenPair>(
+    `${IAM_BASE}/auth/refresh`,
+    {
+      refresh_token: localStorage.getItem(REFRESH_TOKEN_KEY) ?? '',
+    },
+    { timeout: DEFAULT_TIMEOUT_MS },
+  )
   localStorage.setItem(ACCESS_TOKEN_KEY, data.access_token)
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
   syncTokensIntoStore(data.access_token, data.refresh_token)

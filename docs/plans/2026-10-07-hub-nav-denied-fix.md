@@ -1,5 +1,12 @@
 # 录播调度导航修复（hub nav denied fix）实施规划
 
+> **实施结果（2026-10-07，已落地）：** 根因分析与 Task 1/4/5 的思路已采纳，但**拒绝方式改为「完全不跳转」**——
+> 守卫对任何授权失败都不再导航：已在页面上时弹明确错误并原地停留，硬加载被拒 URL 时在同一 URL 渲染
+> 拒绝页（`src/components/RouteDenied.vue` + `src/composables/useRouteDenial.ts`，由 `App.vue` 挂载）。
+> 因此 **Task 2/3 的 `/hub/denied` 路由方案作废**（它仍是一次跳转，已明令禁止）；`permissionsError` 标志
+> 也不再需要：权限集未知（读取中或失败）时一律不过滤导航（`AppLayout.visibleSections`），失败另弹
+> 明确告警。Task 5 的 15s 默认超时按原样落地。本文件保留为根因记录，请勿按 Task 2/3 实施。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 修复"点击录播调度无反应 / 被弹回身份与访问管理"的导航缺陷，并补齐同类隐患（侧栏过滤偏差、axios 无超时）。

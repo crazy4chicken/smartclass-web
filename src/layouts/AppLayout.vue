@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
   Avatar,
@@ -116,6 +117,12 @@ const asideTitle = computed(() => {
 /** Sections the current user actually holds grants for. */
 const visibleSections = computed(() =>
   activeSections.value.filter((section) => {
+    if (!auth.permissionsLoaded) {
+      // Grants are still unknown - either the read is in flight or it failed. Nothing is
+      // hidden on a guess: an IAM outage must not collapse the sidebar, and a retry must
+      // not blank it again. Pages and the router guard report what they cannot reach.
+      return true
+    }
     if (section.areas) {
       return section.areas.some((area) => auth.hasIamArea(area))
     }
@@ -124,6 +131,20 @@ const visibleSections = computed(() =>
       return actions.some((action) => auth.hasGrant(system, action))
     }
     return true
+  }),
+)
+
+/**
+ * Header service entries. A gated service (see `registry.ts`) disappears once the grant
+ * set is loaded and holds none of its actions; while grants are unknown or unreadable
+ * it stays reachable so the area itself can explain the situation.
+ */
+const visibleServices = computed(() =>
+  services.filter((service) => {
+    if (!service.gate || !auth.permissionsLoaded) {
+      return true
+    }
+    return service.gate.actions.some((action) => auth.hasGrant(service.gate!.system, action))
   }),
 )
 
@@ -145,7 +166,9 @@ onMounted(() => {
     }
     if (!auth.permissionsLoaded) {
       auth.fetchPermissions().catch(() => {
-        // Sidebar stays unfiltered on failure; API errors surface per page instead.
+        // Every entry stays visible while the grants are unknown, so say why the header and
+        // the sidebar are showing more than the account may open.
+        ElMessage.warning('无法读取当前账号的权限，功能入口暂不过滤显示')
       })
     }
   }
@@ -173,7 +196,7 @@ async function onUserCommand(command: string): Promise<void> {
 
       <nav class="service-nav" aria-label="服务导航">
         <button
-          v-for="service in services"
+          v-for="service in visibleServices"
           :key="service.key"
           type="button"
           class="service-nav-item"
