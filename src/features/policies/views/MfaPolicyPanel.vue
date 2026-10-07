@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox, type FormInstance, type FormItemRule, type FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { useCursorList } from '@/composables/useCursorList'
+import { IAM_OBJECT_KIND_LABELS, toIamObjectKind } from '@/composables/useIamObjects'
+import type { IamObjectKind } from '@/composables/useIamObjects'
 import type { MfaPolicy } from '@/api/types'
 import { errorMessage } from '@/utils/error'
 import {
@@ -16,12 +19,18 @@ import {
   type MfaPolicyUpdatePayload,
 } from '../api'
 
+/** `default` targets everyone and carries no subject id; the rest are IAM object kinds. */
 const SUBJECT_KINDS = [
   { label: '默认人群', value: 'default' },
   { label: '团队', value: 'team' },
   { label: '用户组', value: 'group' },
   { label: '角色', value: 'role' },
-]
+] as const
+
+/** The panel picks the kind itself (it also has `default`), so the object picker shows only the target. */
+const subjectObjectKinds = computed<readonly IamObjectKind[]>(() =>
+  form.subjectKind === 'default' ? ['team'] : [form.subjectKind],
+)
 
 const { items, loading, finished, loadMore, reload } = useCursorList<MfaPolicy>(listMfaPolicies)
 
@@ -44,7 +53,7 @@ async function loadMoreSafe(): Promise<void> {
 onMounted(refresh)
 
 function subjectKindLabel(kind: string): string {
-  return SUBJECT_KINDS.find((item) => item.value === kind)?.label ?? kind
+  return SUBJECT_KINDS.find((item) => item.value === kind)?.label ?? IAM_OBJECT_KIND_LABELS[kind as IamObjectKind] ?? kind
 }
 
 function formatTime(value: string): string {
@@ -57,7 +66,7 @@ const saving = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
-  subjectKind: 'default',
+  subjectKind: 'default' as 'default' | IamObjectKind,
   subjectId: '',
   required: true,
   denyUnenrolled: false,
@@ -90,7 +99,7 @@ function openCreate(): void {
 function openEdit(row: MfaPolicy): void {
   editing.value = row
   form.name = row.name
-  form.subjectKind = row.subject_kind
+  form.subjectKind = row.subject_kind === 'default' ? 'default' : toIamObjectKind(row.subject_kind)
   form.subjectId = row.subject_id ?? ''
   form.required = row.required
   form.denyUnenrolled = row.deny_unenrolled
@@ -233,8 +242,12 @@ async function remove(row: MfaPolicy): Promise<void> {
             <el-option v-for="item in SUBJECT_KINDS" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.subjectKind !== 'default'" label="主体 ID" prop="subjectId">
-          <el-input v-model="form.subjectId" placeholder="团队 / 用户组 / 角色的 ULID" />
+        <el-form-item v-if="form.subjectKind !== 'default'" label="主体" prop="subjectId">
+          <IamObjectSelect
+            v-model="form.subjectId"
+            :kinds="subjectObjectKinds"
+            placeholder="搜索并选择目标对象"
+          />
         </el-form-item>
         <el-form-item label="要求 MFA" prop="required">
           <el-switch v-model="form.required" />

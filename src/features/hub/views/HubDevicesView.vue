@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Download, Link, Plus, Refresh } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -481,11 +482,11 @@ onMounted(() => {
                   <el-input v-model="editForm.location" maxlength="120" />
                 </el-form-item>
                 <template v-if="canAssignOwnership">
-                  <el-form-item label="团队 ID">
-                    <el-input v-model="editForm.team_id" />
+                  <el-form-item label="团队">
+                    <IamObjectSelect v-model="editForm.team_id" :kinds="['team']" placeholder="留空则保持当前归属" />
                   </el-form-item>
-                  <el-form-item label="所有者 ID">
-                    <el-input v-model="editForm.owner_id" />
+                  <el-form-item label="所有者">
+                    <IamObjectSelect v-model="editForm.owner_id" :kinds="['user']" placeholder="留空则保持当前归属" />
                   </el-form-item>
                 </template>
               </el-form>
@@ -597,11 +598,11 @@ onMounted(() => {
           <el-input v-model="createForm.location" placeholder="例如：教学楼 A-301" maxlength="120" />
         </el-form-item>
         <template v-if="canAssignOwnership">
-          <el-form-item label="团队 ID">
-            <el-input v-model="createForm.team_id" placeholder="留空则归属当前账号" />
+          <el-form-item label="团队">
+            <IamObjectSelect v-model="createForm.team_id" :kinds="['team']" placeholder="留空则归属当前账号" />
           </el-form-item>
-          <el-form-item label="所有者 ID">
-            <el-input v-model="createForm.owner_id" placeholder="留空则归属当前账号" />
+          <el-form-item label="所有者">
+            <IamObjectSelect v-model="createForm.owner_id" :kinds="['user']" placeholder="留空则归属当前账号" />
           </el-form-item>
         </template>
       </el-form>

@@ -4,7 +4,10 @@ import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { useCursorList } from '@/composables/useCursorList'
+import { IAM_OBJECT_KIND_LABELS, toIamObjectKind } from '@/composables/useIamObjects'
+import type { IamObjectKind } from '@/composables/useIamObjects'
 import type { PasswordPolicy } from '@/api/types'
 import { errorMessage } from '@/utils/error'
 import {
@@ -19,12 +22,8 @@ import {
 /** UI state for a nullable boolean policy field: inherit (null), require (true), forbid (false). */
 type TriState = 'inherit' | 'require' | 'forbid'
 
-const SUBJECT_KINDS = [
-  { label: '用户', value: 'user' },
-  { label: '团队', value: 'team' },
-  { label: '用户组', value: 'group' },
-  { label: '角色', value: 'role' },
-]
+/** Every subject kind a password rule can target; the id picks one of them. */
+const SUBJECT_KINDS: readonly IamObjectKind[] = ['user', 'team', 'group', 'role']
 
 const REQUIRE_OPTIONS = [
   { label: '继承默认', value: 'inherit' },
@@ -59,7 +58,7 @@ async function loadMoreSafe(): Promise<void> {
 onMounted(refresh)
 
 function subjectKindLabel(kind: string): string {
-  return SUBJECT_KINDS.find((item) => item.value === kind)?.label ?? kind
+  return IAM_OBJECT_KIND_LABELS[kind as IamObjectKind] ?? kind
 }
 
 function boolLabel(value?: boolean | null): string {
@@ -103,7 +102,7 @@ const saving = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive({
   name: '',
-  subjectKind: 'user',
+  subjectKind: 'user' as IamObjectKind,
   subjectId: '',
   priority: null as number | null,
   minLength: null as number | null,
@@ -140,7 +139,7 @@ function openCreate(): void {
 function openEdit(row: PasswordPolicy): void {
   editing.value = row
   form.name = row.name
-  form.subjectKind = row.subject_kind
+  form.subjectKind = toIamObjectKind(row.subject_kind)
   form.subjectId = row.subject_id
   form.priority = row.priority
   form.minLength = row.min_length ?? null
@@ -304,13 +303,13 @@ async function remove(row: PasswordPolicy): Promise<void> {
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="策略名称，可留空" />
         </el-form-item>
-        <el-form-item label="主体类型" prop="subjectKind">
-          <el-select v-model="form.subjectKind" class="full-width">
-            <el-option v-for="item in SUBJECT_KINDS" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="主体 ID" prop="subjectId">
-          <el-input v-model="form.subjectId" placeholder="用户 / 团队 / 用户组 / 角色的 ULID" />
+        <el-form-item label="主体" prop="subjectId">
+          <IamObjectSelect
+            v-model="form.subjectId"
+            v-model:kind="form.subjectKind"
+            :kinds="SUBJECT_KINDS"
+            placeholder="搜索并选择用户 / 团队 / 用户组 / 角色"
+          />
         </el-form-item>
         <el-form-item label="优先级" prop="priority">
           <el-input-number v-model="form.priority" :step="1" step-strictly placeholder="留空使用默认优先级" />

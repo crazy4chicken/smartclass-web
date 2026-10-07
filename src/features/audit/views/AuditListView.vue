@@ -6,6 +6,7 @@ import { ElMessage } from 'element-plus'
 import { isApiError } from '@/api/http'
 import type { AuditEntry } from '@/api/types'
 import { useCursorList } from '@/composables/useCursorList'
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 
 import { exportAuditEntries, listAuditEntries, type AuditExportFormat } from '../api'
@@ -110,13 +111,12 @@ onMounted(fetchPage)
   <div class="audit-page">
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input
+        <IamObjectSelect
           v-model="teamIdInput"
           class="team-filter"
-          clearable
-          placeholder="按团队 ID 过滤"
-          @keyup.enter="onFilter"
-          @clear="onFilter"
+          :kinds="['team']"
+          placeholder="按团队过滤"
+          @update:model-value="onFilter"
         />
         <el-button type="primary" @click="onFilter">查询</el-button>
         <el-button @click="onResetFilter">重置</el-button>

@@ -5,6 +5,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, Edit, Refresh } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
+import { toIamObjectKind } from '@/composables/useIamObjects'
+import type { IamObjectKind } from '@/composables/useIamObjects'
 import { errorMessage } from '@/utils/error'
 import { useAuthStore } from '@/stores/auth'
 import { useCursorList } from '@/composables/useCursorList'
@@ -12,6 +15,9 @@ import { fetchAdminStats, listQuotas, runGc, upsertQuota } from '@/features/file
 import type { AdminStats, GcResult, QuotaOverride } from '@/features/file/api'
 
 const auth = useAuthStore()
+/** A quota override targets a user or a team; the service stores the pair as the subject. */
+const QUOTA_SUBJECT_KINDS: readonly IamObjectKind[] = ['user', 'team']
+
 /** The admin plane (`/api/v1/admin/*`, quota overrides) is `filehouse:manage:any` only. */
 const canManage = computed(() => auth.coversGrant('filehouse', 'manage', 'any'))
 
@@ -53,7 +59,7 @@ async function loadStats(): Promise<void> {
 const quotaVisible = ref(false)
 const quotaSubmitting = ref(false)
 const quotaFormRef = ref<FormInstance>()
-const quotaForm = ref({ kind: 'user', id: '', max_bytes: 0, max_objects: 0 })
+const quotaForm = ref({ kind: 'user' as IamObjectKind, id: '', max_bytes: 0, max_objects: 0 })
 
 const quotaRules: FormRules = {
   id: { required: true, message: '请输入主体 ID', trigger: 'blur' },
@@ -61,7 +67,12 @@ const quotaRules: FormRules = {
 
 function openQuota(row?: QuotaOverride): void {
   quotaForm.value = row
-    ? { kind: row.subject_kind, id: row.subject_id, max_bytes: row.max_bytes, max_objects: row.max_objects }
+    ? {
+        kind: toIamObjectKind(row.subject_kind),
+        id: row.subject_id,
+        max_bytes: row.max_bytes,
+        max_objects: row.max_objects,
+      }
     : { kind: 'user', id: '', max_bytes: 0, max_objects: 0 }
   quotaVisible.value = true
 }
@@ -205,14 +216,13 @@ onMounted(() => {
     <el-dialog v-model="quotaVisible" title="配额覆盖" width="520px" :close-on-click-modal="false">
       <el-alert class="block" type="info" :closable="false" title="0 表示该维度不限；覆盖优先于默认配额。" />
       <el-form ref="quotaFormRef" :model="quotaForm" :rules="quotaRules" label-width="110px">
-        <el-form-item label="主体类型">
-          <el-radio-group v-model="quotaForm.kind">
-            <el-radio value="user">user</el-radio>
-            <el-radio value="team">team</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="主体 ID" prop="id">
-          <el-input v-model="quotaForm.id" placeholder="用户或团队的 ULID" />
+        <el-form-item label="主体" prop="id">
+          <IamObjectSelect
+            v-model="quotaForm.id"
+            v-model:kind="quotaForm.kind"
+            :kinds="QUOTA_SUBJECT_KINDS"
+            placeholder="搜索并选择用户或团队"
+          />
         </el-form-item>
         <el-form-item label="容量上限">
           <el-input-number v-model="quotaForm.max_bytes" :min="0" :step="1073741824" />

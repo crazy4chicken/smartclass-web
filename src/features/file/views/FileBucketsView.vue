@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 import { useAuthStore } from '@/stores/auth'
 import { useCursorList } from '@/composables/useCursorList'
@@ -245,11 +246,15 @@ onMounted(() => {
           <el-input-number v-model="form.quota_objects" :min="0" :step="1000" :disabled="!canManageAny" />
           <span class="field-hint">0 = 不限</span>
         </el-form-item>
-        <el-form-item v-if="canManageAny" label="团队 ID">
-          <el-input v-model="form.team_id" placeholder="留空为个人桶；编辑时留空表示清除团队" />
+        <el-form-item v-if="canManageAny" label="团队">
+          <IamObjectSelect
+            v-model="form.team_id"
+            :kinds="['team']"
+            placeholder="留空为个人桶；编辑时留空表示清除团队"
+          />
         </el-form-item>
         <el-form-item v-if="canManageAny" label="所有者">
-          <el-input v-model="form.owner" placeholder="留空归属当前账号（连同其类型）" />
+          <IamObjectSelect v-model="form.owner" :kinds="['user']" placeholder="留空归属当前账号（连同其类型）" />
         </el-form-item>
         <el-form-item v-if="canManageAny && form.owner.trim()" label="所有者类型">
           <el-select v-model="form.owner_kind" class="owner-kind">

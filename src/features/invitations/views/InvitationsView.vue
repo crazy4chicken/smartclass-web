@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
 import type { Invitation } from '@/api/types'
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 
 import { cancelInvitation, createInvitation, resendInvitation } from '../api'
@@ -155,7 +156,12 @@ async function onCancel(): Promise<void> {
         服务未提供邀请列表接口，邀请的撤销与重发按邀请创建后返回的用户 ID 进行操作。
       </p>
       <div class="action-row">
-        <el-input v-model="actionUserId" class="user-id-input" clearable placeholder="邀请用户的 ID" />
+        <IamObjectSelect
+          v-model="actionUserId"
+          class="user-id-input"
+          :kinds="['user']"
+          placeholder="搜索并选择邀请用户"
+        />
         <el-button :loading="resending" @click="onResend">重发邀请</el-button>
         <el-button type="danger" plain :loading="canceling" @click="onCancel">撤销邀请</el-button>
       </div>

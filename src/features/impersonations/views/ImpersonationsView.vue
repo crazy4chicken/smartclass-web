@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
 import type { Impersonation } from '@/api/types'
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 
 import { startImpersonation } from '../api'
@@ -86,8 +87,8 @@ async function copyToken(): Promise<void> {
         class="notice"
       />
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="start-form">
-        <el-form-item label="目标用户 ID" prop="user_id">
-          <el-input v-model="form.user_id" placeholder="目标用户 ID" />
+        <el-form-item label="目标用户" prop="user_id">
+          <IamObjectSelect v-model="form.user_id" :kinds="['user']" placeholder="搜索并选择目标用户" />
         </el-form-item>
         <el-form-item label="假冒理由" prop="reason">
           <el-input

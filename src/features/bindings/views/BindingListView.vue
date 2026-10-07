@@ -4,18 +4,19 @@ import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { useCursorList } from '@/composables/useCursorList'
-import type { Binding, Role, Team } from '@/api/types'
+import { IAM_OBJECT_KIND_LABELS, toIamObjectKind } from '@/composables/useIamObjects'
+import type { IamObjectKind } from '@/composables/useIamObjects'
+import type { Binding, Role } from '@/api/types'
 import { errorMessage } from '@/utils/error'
 import { listRoleOptions } from '@/features/roles/api'
-import { createBinding, deleteBinding, listBindings, listTeamOptions, type BindingCreatePayload } from '../api'
+import { createBinding, deleteBinding, listBindings, type BindingCreatePayload } from '../api'
 
-const SUBJECT_KINDS = [
-  { label: '用户', value: 'user' },
-  { label: '用户组', value: 'group' },
-]
+/** The binding endpoint addresses users and groups; a team binding carries `team_id` instead. */
+const SUBJECT_KINDS: readonly IamObjectKind[] = ['user', 'group']
 
-const subjectKind = ref('user')
+const subjectKind = ref<IamObjectKind>('user')
 const subjectId = ref('')
 const queried = ref(false)
 
@@ -49,7 +50,7 @@ async function search(): Promise<void> {
 }
 
 function subjectKindLabel(kind: string): string {
-  return SUBJECT_KINDS.find((item) => item.value === kind)?.label ?? kind
+  return IAM_OBJECT_KIND_LABELS[kind as IamObjectKind] ?? kind
 }
 
 function formatTime(value?: string | null): string {
@@ -57,7 +58,6 @@ function formatTime(value?: string | null): string {
 }
 
 const roleOptions = ref<Role[]>([])
-const teamOptions = ref<Team[]>([])
 
 function roleLabel(roleId: string): string {
   return roleOptions.value.find((item) => item.id === roleId)?.name ?? roleId
@@ -65,9 +65,7 @@ function roleLabel(roleId: string): string {
 
 async function loadOptions(): Promise<void> {
   try {
-    const [roles, teams] = await Promise.all([listRoleOptions(), listTeamOptions()])
-    roleOptions.value = roles
-    teamOptions.value = teams
+    roleOptions.value = await listRoleOptions()
   } catch (error) {
     ElMessage.error(errorMessage(error))
   }
@@ -79,7 +77,7 @@ const dialogVisible = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
 const form = reactive({
-  subjectKind: 'user',
+  subjectKind: 'user' as IamObjectKind,
   subjectId: '',
   roleId: '',
   teamId: '',
@@ -87,8 +85,7 @@ const form = reactive({
   expiresAt: null as Date | null,
 })
 const rules: FormRules = {
-  subjectKind: [{ required: true, message: '请选择主体类型', trigger: 'change' }],
-  subjectId: [{ required: true, message: '请输入主体 ID', trigger: 'blur' }],
+  subjectId: [{ required: true, message: '请选择主体', trigger: 'change' }],
   roleId: [{ required: true, message: '请选择角色', trigger: 'change' }],
 }
 
@@ -131,7 +128,7 @@ async function submit(): Promise<void> {
     const created = await createBinding(payload)
     ElMessage.success('绑定已创建')
     dialogVisible.value = false
-    subjectKind.value = created.subject_kind
+    subjectKind.value = toIamObjectKind(created.subject_kind)
     subjectId.value = created.subject_id
     await search()
   } catch (error) {
@@ -169,15 +166,12 @@ async function remove(row: Binding): Promise<void> {
 <template>
   <el-card shadow="never">
     <div class="toolbar">
-      <el-select v-model="subjectKind" class="kind-select" placeholder="主体类型">
-        <el-option v-for="item in SUBJECT_KINDS" :key="item.value" :label="item.label" :value="item.value" />
-      </el-select>
-      <el-input
+      <IamObjectSelect
         v-model="subjectId"
+        v-model:kind="subjectKind"
         class="filter-input"
-        placeholder="主体 ID（用户/用户组 ULID）"
-        clearable
-        @keyup.enter="search"
+        :kinds="SUBJECT_KINDS"
+        placeholder="搜索并选择主体"
       />
       <el-button type="primary" :icon="Search" @click="search">查询</el-button>
       <div class="toolbar-right">
@@ -223,43 +217,23 @@ async function remove(row: Binding): Promise<void> {
 
     <el-dialog v-model="dialogVisible" title="新建绑定" width="560px" :close-on-click-modal="false">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" @submit.prevent>
-        <el-form-item label="主体类型" prop="subjectKind">
-          <el-select v-model="form.subjectKind" class="full-width">
-            <el-option v-for="item in SUBJECT_KINDS" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="主体 ID" prop="subjectId">
-          <el-input v-model="form.subjectId" placeholder="用户或用户组的 ULID" />
+        <el-form-item label="主体" prop="subjectId">
+          <IamObjectSelect
+            v-model="form.subjectId"
+            v-model:kind="form.subjectKind"
+            :kinds="SUBJECT_KINDS"
+            placeholder="搜索并选择用户或用户组"
+          />
         </el-form-item>
         <el-form-item label="角色" prop="roleId">
-          <el-select
-            v-model="form.roleId"
-            class="full-width"
-            filterable
-            allow-create
-            default-first-option
-            placeholder="选择或直接粘贴角色 ID"
-          >
-            <el-option
-              v-for="item in roleOptions"
-              :key="item.id"
-              :label="item.team_id ? `${item.name}（团队 ${item.team_id}）` : item.name"
-              :value="item.id"
-            />
-          </el-select>
+          <IamObjectSelect v-model="form.roleId" :kinds="['role']" placeholder="搜索并选择角色" />
         </el-form-item>
         <el-form-item label="团队范围" prop="teamId">
-          <el-select
+          <IamObjectSelect
             v-model="form.teamId"
-            class="full-width"
-            filterable
-            allow-create
-            clearable
-            default-first-option
-            placeholder="留空为不限团队，可选择或粘贴团队 ID"
-          >
-            <el-option v-for="item in teamOptions" :key="item.id" :label="item.name" :value="item.id" />
-          </el-select>
+            :kinds="['team']"
+            placeholder="留空为不限团队，可搜索并选择团队"
+          />
         </el-form-item>
         <el-form-item label="条件" prop="condition">
           <el-input

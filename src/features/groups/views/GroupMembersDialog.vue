@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import type { BatchResult, Group, GroupMember } from '@/api/types'
 import { errorMessage } from '@/utils/error'
 import {
@@ -199,8 +200,8 @@ async function submitRemove(): Promise<void> {
 
     <el-divider content-position="left">添加 / 替换成员</el-divider>
     <el-form ref="addFormRef" :model="addForm" :rules="addRules" inline>
-      <el-form-item label="用户 ID" prop="userId">
-        <el-input v-model="addForm.userId" placeholder="用户 ULID" class="user-input" />
+      <el-form-item label="用户" prop="userId">
+        <IamObjectSelect v-model="addForm.userId" :kinds="['user']" placeholder="搜索并选择用户" class="user-input" />
       </el-form-item>
       <el-form-item label="到期时间">
         <el-date-picker
@@ -250,8 +251,8 @@ async function submitRemove(): Promise<void> {
 
     <el-divider content-position="left">移除成员</el-divider>
     <el-form ref="removeFormRef" :model="removeForm" :rules="removeRules" inline>
-      <el-form-item label="用户 ID" prop="userId">
-        <el-input v-model="removeForm.userId" placeholder="用户 ULID" class="user-input" />
+      <el-form-item label="用户" prop="userId">
+        <IamObjectSelect v-model="removeForm.userId" :kinds="['user']" placeholder="搜索并选择用户" class="user-input" />
       </el-form-item>
       <el-form-item label="调用方式">
         <el-radio-group v-model="removeForm.mode">

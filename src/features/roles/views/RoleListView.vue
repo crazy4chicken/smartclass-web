@@ -5,6 +5,7 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 
 import { useCursorList } from '@/composables/useCursorList'
 import type { Role } from '@/api/types'
+import IamObjectSelect from '@/components/IamObjectSelect.vue'
 import { errorMessage } from '@/utils/error'
 import { createRole, deleteRole, listRoles, updateRole } from '../api'
 import RolePermissionsDialog from './RolePermissionsDialog.vue'
@@ -116,12 +117,12 @@ function openPermissions(row: Role): void {
 <template>
   <el-card shadow="never">
     <div class="toolbar">
-      <el-input
+      <IamObjectSelect
         v-model="teamFilter"
         class="filter-input"
-        placeholder="按团队 ID 过滤（留空为全部角色）"
-        clearable
-        @keyup.enter="refresh"
+        :kinds="['team']"
+        placeholder="按团队过滤（留空为全部角色）"
+        @update:model-value="refresh"
       />
       <el-button type="primary" :icon="Search" @click="refresh">查询</el-button>
       <div class="toolbar-right">
