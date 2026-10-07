@@ -139,6 +139,7 @@ function createClient(baseURL: string): AxiosInstance {
         !!config &&
         !config._authRetried &&
         !AUTH_FLOW_PATHS.some((path) => url.startsWith(path)) &&
+        !isUnrefreshableTokenRejection(apiError.detail) &&
         !!localStorage.getItem(REFRESH_TOKEN_KEY)
       if (config && canRefresh) {
         config._authRetried = true
@@ -229,6 +230,27 @@ function isRefreshRejected(error: unknown): boolean {
   }
   const status = error.response?.status ?? 0
   return status === 401 || status === 403
+}
+
+/**
+ * nsc-filehouse classifies why it rejected a bearer token and documents the codes as
+ * `invalid_token*`. A fresh access token cannot change any of these outcomes - the token
+ * is for another audience or issuer, its signature does not verify, the service cannot
+ * reach the JWKS - so refreshing first would only add a round trip before the same error.
+ * The generic `invalid_token` (and an unclassified 401) still refreshes.
+ */
+const UNREFRESHABLE_TOKEN_DETAILS = [
+  'invalid_token_missing',
+  'invalid_token_malformed',
+  'invalid_token_audience',
+  'invalid_token_issuer',
+  'invalid_token_signature',
+  'invalid_token_claims',
+  'invalid_token_jwks',
+]
+
+function isUnrefreshableTokenRejection(detail: string): boolean {
+  return UNREFRESHABLE_TOKEN_DETAILS.includes(detail)
 }
 
 async function forceLogin(): Promise<void> {

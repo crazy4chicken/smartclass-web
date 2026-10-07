@@ -28,20 +28,35 @@ export interface Bucket {
   updated_at: string
 }
 
-/** `POST /api/v1/buckets` body; `quota_bytes`/`quota_objects` of 0 mean unlimited. */
+/**
+ * `POST /api/v1/buckets` body; `quota_bytes`/`quota_objects` of 0 mean unlimited.
+ * `owner`/`owner_kind` name the owning subject: omitting them keeps the caller and its
+ * own kind, and a foreign owner additionally needs the platform-wide
+ * `filehouse:manage:any` grant because the bucket then lands outside the caller's scope.
+ */
 export interface BucketPayload {
   name: string
   description?: string
   quota_bytes?: number
   quota_objects?: number
   team_id?: string
+  owner?: string
+  owner_kind?: 'user' | 'service'
 }
 
-/** `PATCH /api/v1/buckets/{bucket}` body; quota fields additionally need `filehouse:manage:any`. */
+/**
+ * `PATCH /api/v1/buckets/{bucket}` body; the quota fields plus `owner`, `owner_kind` and
+ * `team_id` need the platform-wide `filehouse:manage:any` grant, since a quota bounds
+ * every future writer and the ownership fields move the bucket between scopes.
+ * `team_id: ''` clears the bucket's team; `owner` must not be empty.
+ */
 export interface BucketPatch {
   description?: string
   quota_bytes?: number
   quota_objects?: number
+  team_id?: string
+  owner?: string
+  owner_kind?: 'user' | 'service'
 }
 
 /** One stored object; `key` is the path inside the bucket. */

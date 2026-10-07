@@ -14,8 +14,12 @@ import type { Bucket } from '@/features/file/api'
 const auth = useAuthStore()
 const canWrite = computed(() => auth.hasGrant('filehouse', 'write'))
 const canDelete = computed(() => auth.hasGrant('filehouse', 'delete'))
-/** Quota fields on PATCH are administrative. */
-const canManage = computed(() => auth.hasGrant('filehouse', 'manage'))
+/**
+ * Quotas and the ownership fields (owner, owner_kind, team_id) need the platform-wide
+ * `filehouse:manage:any` grant: a quota bounds every future writer, and the ownership
+ * fields move the bucket between authorization scopes.
+ */
+const canManageAny = computed(() => auth.permissions.includes('filehouse:manage:any'))
 
 const { items, loading, finished, loadMore, reload } = useCursorList<Bucket>((cursor, limit) =>
   listBuckets({ cursor, limit }),
@@ -49,7 +53,15 @@ const dialogMode = ref<'create' | 'edit'>('create')
 const editingName = ref('')
 const submitting = ref(false)
 const formRef = ref<FormInstance>()
-const form = ref({ name: '', description: '', quota_bytes: 0, quota_objects: 0 })
+const form = ref({
+  name: '',
+  description: '',
+  quota_bytes: 0,
+  quota_objects: 0,
+  team_id: '',
+  owner: '',
+  owner_kind: 'user' as 'user' | 'service',
+})
 
 const rules: FormRules = {
   name: [{ required: true, message: '请输入桶名', trigger: 'blur' }],
@@ -58,7 +70,7 @@ const rules: FormRules = {
 function openCreate(): void {
   dialogMode.value = 'create'
   editingName.value = ''
-  form.value = { name: '', description: '', quota_bytes: 0, quota_objects: 0 }
+  form.value = { name: '', description: '', quota_bytes: 0, quota_objects: 0, team_id: '', owner: '', owner_kind: 'user' }
   dialogVisible.value = true
 }
 
@@ -70,6 +82,9 @@ function openEdit(row: Bucket): void {
     description: row.description ?? '',
     quota_bytes: row.quota_bytes,
     quota_objects: row.quota_objects,
+    team_id: row.team_id ?? '',
+    owner: row.owner_id ?? '',
+    owner_kind: row.owner_kind === 'service' ? 'service' : 'user',
   }
   dialogVisible.value = true
 }
@@ -88,14 +103,33 @@ async function submitForm(): Promise<void> {
       const payload = {
         name: form.value.name.trim(),
         description: form.value.description.trim(),
-        ...(canManage.value ? { quota_bytes: form.value.quota_bytes, quota_objects: form.value.quota_objects } : {}),
+        ...(canManageAny.value
+          ? {
+              quota_bytes: form.value.quota_bytes,
+              quota_objects: form.value.quota_objects,
+              team_id: form.value.team_id.trim(),
+              ...(form.value.owner.trim()
+                ? { owner: form.value.owner.trim(), owner_kind: form.value.owner_kind }
+                : {}),
+            }
+          : {}),
       }
       await createBucket(payload, crypto.randomUUID())
       ElMessage.success('桶已创建')
     } else {
       await patchBucket(editingName.value, {
         description: form.value.description.trim(),
-        ...(canManage.value ? { quota_bytes: form.value.quota_bytes, quota_objects: form.value.quota_objects } : {}),
+        ...(canManageAny.value
+          ? {
+              quota_bytes: form.value.quota_bytes,
+              quota_objects: form.value.quota_objects,
+              // An empty team_id clears the team; an empty owner is rejected, so it is left out.
+              team_id: form.value.team_id.trim(),
+              ...(form.value.owner.trim()
+                ? { owner: form.value.owner.trim(), owner_kind: form.value.owner_kind }
+                : {}),
+            }
+          : {}),
       })
       ElMessage.success('桶已更新')
     }
@@ -151,10 +185,11 @@ onMounted(() => {
         </template>
       </el-table-column>
       <el-table-column prop="description" label="说明" min-width="200" show-overflow-tooltip />
-      <el-table-column label="归属" width="150">
+      <el-table-column label="归属" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <el-tag size="small" type="info">{{ row.owner_kind }}</el-tag>
-          <span class="owner-id">{{ row.team_id || row.owner_id }}</span>
+          <span class="owner-id mono">{{ row.owner_id }}</span>
+          <span class="owner-id">团队 {{ row.team_id || '—' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="用量 / 配额" min-width="220">
@@ -189,11 +224,11 @@ onMounted(() => {
       :close-on-click-modal="false"
     >
       <el-alert
-        v-if="!canManage"
+        v-if="!canManageAny"
         class="block"
         type="info"
         :closable="false"
-        title="配额字段需要 filehouse:manage:any，当前账号只能修改说明。"
+        title="配额与归属字段需要 filehouse:manage:any，当前账号只能修改说明。"
       />
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <el-form-item label="桶名" prop="name">
@@ -203,12 +238,24 @@ onMounted(() => {
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="用途说明（可选）" />
         </el-form-item>
         <el-form-item label="容量配额">
-          <el-input-number v-model="form.quota_bytes" :min="0" :step="1073741824" :disabled="!canManage" />
+          <el-input-number v-model="form.quota_bytes" :min="0" :step="1073741824" :disabled="!canManageAny" />
           <span class="field-hint">字节，0 = 不限</span>
         </el-form-item>
         <el-form-item label="对象数配额">
-          <el-input-number v-model="form.quota_objects" :min="0" :step="1000" :disabled="!canManage" />
+          <el-input-number v-model="form.quota_objects" :min="0" :step="1000" :disabled="!canManageAny" />
           <span class="field-hint">0 = 不限</span>
+        </el-form-item>
+        <el-form-item v-if="canManageAny" label="团队 ID">
+          <el-input v-model="form.team_id" placeholder="留空为个人桶；编辑时留空表示清除团队" />
+        </el-form-item>
+        <el-form-item v-if="canManageAny" label="所有者">
+          <el-input v-model="form.owner" placeholder="留空归属当前账号（连同其类型）" />
+        </el-form-item>
+        <el-form-item v-if="canManageAny && form.owner.trim()" label="所有者类型">
+          <el-select v-model="form.owner_kind" class="owner-kind">
+            <el-option value="user" label="user（用户）" />
+            <el-option value="service" label="service（服务账号）" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -268,5 +315,13 @@ onMounted(() => {
   margin-left: 12px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.owner-kind {
+  width: 180px;
+}
+
+.mono {
+  font-family: monospace;
 }
 </style>

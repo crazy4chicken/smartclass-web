@@ -6,6 +6,15 @@ import { isApiError } from '@/api/http'
  */
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_token: '凭证无效或已过期',
+  // nsc-filehouse classifies why it rejected a bearer token (`invalid_token*`).
+  invalid_token_missing: '请求未携带访问令牌',
+  invalid_token_malformed: '访问令牌格式不正确',
+  invalid_token_expired: '访问令牌已过期',
+  invalid_token_audience: '访问令牌不适用于该服务',
+  invalid_token_issuer: '访问令牌的签发方不被该服务信任',
+  invalid_token_signature: '访问令牌签名校验失败',
+  invalid_token_claims: '访问令牌的声明不合法',
+  invalid_token_jwks: '鉴权服务不可用（服务无法获取 JWKS）',
   weak_password: '密码强度不足',
   account_locked: '账号已锁定',
   account_pending: '账号待审核',
