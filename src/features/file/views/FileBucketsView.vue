@@ -19,7 +19,7 @@ const canDelete = computed(() => auth.hasGrant('filehouse', 'delete'))
  * `filehouse:manage:any` grant: a quota bounds every future writer, and the ownership
  * fields move the bucket between authorization scopes.
  */
-const canManageAny = computed(() => auth.permissions.includes('filehouse:manage:any'))
+const canManageAny = computed(() => auth.coversGrant('filehouse', 'manage', 'any'))
 
 const { items, loading, finished, loadMore, reload } = useCursorList<Bucket>((cursor, limit) =>
   listBuckets({ cursor, limit }),

@@ -82,10 +82,29 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
+  /**
+   * Whether the caller holds a grant covering `system:action:scope` under the backend's
+   * segment rules (`domain.Match`): a granted `*` matches anything in that segment, every
+   * other segment must be equal. Use this where the scope is part of the answer - the
+   * platform-wide powers behind `filehouse:manage:any` or `cam:manage:any` are not held by
+   * a `:team` or `:own` grant, while `filehouse:*:any` does cover them. {@link hasGrant}
+   * deliberately ignores the scope and only answers "may this account touch the area".
+   */
+  function coversGrant(system: string, action: string, scope: string): boolean {
+    return permissions.value.some((key) => {
+      const [grantedSystem, grantedAction, grantedScope] = key.split(':')
+      return (
+        (grantedSystem === system || grantedSystem === '*') &&
+        (grantedAction === '*' || grantedAction === action) &&
+        (grantedScope === '*' || grantedScope === scope)
+      )
+    })
+  }
+
   /** Whether the user holds any effective grant in the given IAM admin area. */
   function hasIamArea(area: string): boolean {
     return hasGrant('iam', area)
   }
 
-  return { accessToken, refreshToken, profile, permissions, permissionsLoaded, isAuthenticated, setTokens, clear, login, logout, fetchProfile, fetchPermissions, hasGrant, hasIamArea }
+  return { accessToken, refreshToken, profile, permissions, permissionsLoaded, isAuthenticated, setTokens, clear, login, logout, fetchProfile, fetchPermissions, hasGrant, coversGrant, hasIamArea }
 })

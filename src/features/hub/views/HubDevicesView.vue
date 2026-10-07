@@ -46,7 +46,7 @@ const auth = useAuthStore()
 const canManage = computed(() => auth.hasGrant('cam', 'manage'))
 const canControl = computed(() => auth.hasGrant('cam', 'control'))
 /** Ownership may only be assigned by a caller whose manage grant reaches every scope. */
-const canAssignOwnership = computed(() => auth.permissions.includes('cam:manage:any'))
+const canAssignOwnership = computed(() => auth.coversGrant('cam', 'manage', 'any'))
 
 const devices = ref<Device[]>([])
 const loading = ref(false)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -12,7 +12,8 @@ import { fetchAdminStats, listQuotas, runGc, upsertQuota } from '@/features/file
 import type { AdminStats, GcResult, QuotaOverride } from '@/features/file/api'
 
 const auth = useAuthStore()
-const canManage = auth.hasGrant('filehouse', 'manage')
+/** The admin plane (`/api/v1/admin/*`, quota overrides) is `filehouse:manage:any` only. */
+const canManage = computed(() => auth.coversGrant('filehouse', 'manage', 'any'))
 
 const stats = ref<AdminStats | null>(null)
 const statsLoading = ref(false)
