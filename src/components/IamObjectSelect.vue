@@ -3,13 +3,21 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { errorMessage } from '@/utils/error'
-import { IAM_OBJECT_KINDS, IAM_OBJECT_KIND_LABELS, useIamObjects } from '@/composables/useIamObjects'
+import {
+  IAM_OBJECT_KINDS,
+  IAM_OBJECT_KIND_LABELS,
+  requiresTeamScope,
+  useIamObjects,
+} from '@/composables/useIamObjects'
 import type { IamObjectKind } from '@/composables/useIamObjects'
 
 /**
  * Picker for one IAM object: the type (user, team, group, role) plus the target, found by
  * search over incrementally loaded cursor pages of the teamusers admin API. A raw id can
  * still be typed or pasted, so ids copied from a log or another console keep working.
+ *
+ * Groups are team-scoped objects and their list endpoint requires a `team_id`, so a group
+ * picker selects the owning team first - the console convention every group screen follows.
  *
  * The caller owns the pair: `v-model` carries the id and `v-model:kind` the type. Sites
  * that only ever reference one kind pass a single-entry `kinds` list and skip the type
@@ -40,16 +48,26 @@ const emit = defineEmits<{
   (event: 'update:kind', value: IamObjectKind): void
 }>()
 
-const objects = useIamObjects()
+/** The team the active kind is listed in; only the team-scoped kinds read it. */
+const teamId = ref('')
+const objects = useIamObjects(() => teamId.value)
 
 const query = ref('')
 const opened = ref(false)
 
-const activeKind = computed<IamObjectKind>(() => props.kind)
 const visibleKinds = computed(() => (props.kinds.length > 0 ? props.kinds : IAM_OBJECT_KINDS))
 const showKindSelector = computed(() => visibleKinds.value.length > 1)
+/**
+ * The kind being listed. A site that offers a single kind has no selector to drive `v-model:kind`,
+ * so that entry is the active one; otherwise the caller-owned `kind` decides.
+ */
+const activeKind = computed<IamObjectKind>(() =>
+  showKindSelector.value ? props.kind : visibleKinds.value[0],
+)
+/** Whether the selector has to ask for a team before the object list exists. */
+const teamScoped = computed(() => requiresTeamScope(activeKind.value))
 
-const state = computed(() => objects.states[activeKind.value])
+const state = computed(() => objects.state(activeKind.value))
 const options = computed(() => objects.options(activeKind.value, query.value))
 const hasMore = computed(() => objects.hasMore(activeKind.value))
 
@@ -61,6 +79,14 @@ function onKindChange(kind: IamObjectKind): void {
   objects.ensure(kind)
 }
 
+function onTeamChange(value: string): void {
+  // A group belongs to one team, so an id picked under the previous team no longer holds.
+  teamId.value = value
+  emit('update:modelValue', '')
+  query.value = ''
+  objects.ensure(activeKind.value)
+}
+
 function onSelect(value: string): void {
   emit('update:modelValue', value)
 }
@@ -68,7 +94,10 @@ function onSelect(value: string): void {
 function onDropdownVisible(visible: boolean): void {
   opened.value = visible
   if (visible) {
-    objects.ensure(activeKind.value)
+    // Always re-read the first page: teams and groups are created while the console runs,
+    // and a cached page would keep the new object out of the picker until a page reload.
+    // The options already loaded stay visible until the fresh page replaces them.
+    objects.load(activeKind.value, true).catch((error: unknown) => ElMessage.error(errorMessage(error)))
   } else {
     query.value = ''
   }
@@ -145,6 +174,19 @@ watch(
       />
     </el-select>
 
+    <!-- Groups live in a team and the group list endpoint requires its id, so a group
+         picker asks for the team before it has anything to list. -->
+    <IamObjectSelect
+      v-if="teamScoped"
+      :model-value="teamId"
+      class="team-select"
+      :kinds="['team']"
+      :disabled="disabled"
+      :clearable="false"
+      placeholder="选择所属团队"
+      @update:model-value="onTeamChange"
+    />
+
     <el-select
       class="object-select"
       :model-value="modelValue"
@@ -183,6 +225,7 @@ watch(
       <template #empty>
         <div class="empty">
           <span v-if="state.loading">加载中…</span>
+          <span v-else-if="teamScoped && !teamId.trim()">请先选择所属团队</span>
           <span v-else-if="query">没有匹配的对象</span>
           <span v-else>没有可选项</span>
         </div>
@@ -203,6 +246,16 @@ watch(
 .kind-select {
   width: 120px;
   flex: none;
+}
+
+.team-select {
+  width: 168px;
+  flex: none;
+}
+
+/* The nested team picker is a fixed-width slot, so its own select must fit inside it. */
+.team-select .object-select {
+  min-width: 0;
 }
 
 .object-select {

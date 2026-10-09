@@ -15,6 +15,10 @@ import { listUsers } from '@/features/users/api'
  * The list endpoints are cursor paginated and carry no free-text search, so loading is
  * incremental: each kind keeps its own cursor and the picker filters what is loaded,
  * offering the next page when the current one does not answer the query.
+ *
+ * Groups are team-scoped: `GET /groups/` requires a `team_id` and rejects an empty one as
+ * an invalid request, so group pages are cached per team and nothing is fetched until the
+ * caller supplies a team.
  */
 
 export type IamObjectKind = 'user' | 'team' | 'group' | 'role'
@@ -48,16 +52,27 @@ interface KindState {
   loading: boolean
 }
 
-/** Per-kind caches: switching kinds back and forth keeps what was already loaded. */
-const states = reactive<Record<IamObjectKind, KindState>>({
-  user: { items: [], cursor: '', finished: false, loading: false },
-  team: { items: [], cursor: '', finished: false, loading: false },
-  group: { items: [], cursor: '', finished: false, loading: false },
-  role: { items: [], cursor: '', finished: false, loading: false },
-})
+/**
+ * Whether listing `kind` needs a team scope. `GET /groups/` is the one collection that
+ * cannot be listed platform-wide: the specification makes its `team_id` required.
+ */
+export function requiresTeamScope(kind: IamObjectKind): boolean {
+  return kind === 'group'
+}
+
+/** What a kind that was never loaded - or cannot be loaded in the current scope - reads as. */
+const EMPTY_STATE: KindState = { items: [], cursor: '', finished: true, loading: false }
+
+/** Page caches: one per kind, plus one per team for the team-scoped kinds. */
+const states = reactive<Record<string, KindState>>({})
+
+/** The cache slot of `kind` in `teamId`: switching kinds or teams back and forth keeps what was already loaded. */
+function cacheKey(kind: IamObjectKind, teamId: string): string {
+  return requiresTeamScope(kind) ? `${kind}:${teamId}` : kind
+}
 
 /** Fetches one cursor page of the given kind, mapped into selectable options. */
-async function fetchPage(kind: IamObjectKind, cursor: string): Promise<{ items: IamObjectOption[]; nextCursor: string }> {
+async function fetchPage(kind: IamObjectKind, cursor: string, teamId: string): Promise<{ items: IamObjectOption[]; nextCursor: string }> {
   if (kind === 'user') {
     const page = await listUsers(cursor, PAGE_SIZE)
     return {
@@ -78,7 +93,7 @@ async function fetchPage(kind: IamObjectKind, cursor: string): Promise<{ items: 
     }
   }
   if (kind === 'group') {
-    const page = await listGroups('', cursor, PAGE_SIZE)
+    const page = await listGroups(teamId, cursor, PAGE_SIZE)
     return {
       nextCursor: String(page.next_cursor ?? ''),
       items: page.items.map((group) => ({
@@ -119,16 +134,38 @@ export function matchesIamObject(option: IamObjectOption, query: string): boolea
   )
 }
 
-export function useIamObjects() {
+/**
+ * Loads IAM objects for one picker. `teamId` supplies the team the caller is working in:
+ * it is read only for the team-scoped kinds, and while it is empty those kinds stay
+ * unloaded rather than asking an endpoint that would reject them.
+ */
+export function useIamObjects(teamId: () => string = () => '') {
+  /**
+   * The loaded state of `kind`. A kind that was never loaded - including a team-scoped one
+   * whose team is still unknown - reads as an empty, finished list.
+   */
+  function stateOf(kind: IamObjectKind): KindState {
+    return states[cacheKey(kind, teamId())] ?? EMPTY_STATE
+  }
+
   /** Loads the next page of `kind`; the first call (or `reset`) starts from the beginning. */
   async function load(kind: IamObjectKind, reset = false): Promise<void> {
-    const state = states[kind]
+    const team = teamId()
+    if (requiresTeamScope(kind) && team.trim() === '') {
+      return
+    }
+    const state = (states[cacheKey(kind, team)] ??= {
+      items: [],
+      cursor: '',
+      finished: false,
+      loading: false,
+    })
     if (state.loading || (state.finished && !reset)) {
       return
     }
     state.loading = true
     try {
-      const page = await fetchPage(kind, reset ? '' : state.cursor)
+      const page = await fetchPage(kind, reset ? '' : state.cursor, team)
       state.items = reset ? page.items : [...state.items, ...page.items]
       state.cursor = page.nextCursor
       state.finished = isTerminalCursor(page.nextCursor)
@@ -139,26 +176,27 @@ export function useIamObjects() {
 
   /** Ensures at least one page of `kind` is available; used when the dropdown opens. */
   function ensure(kind: IamObjectKind): void {
-    if (states[kind].items.length === 0 && !states[kind].finished) {
+    if (stateOf(kind).items.length === 0) {
       void load(kind)
     }
   }
 
   return {
-    states,
     load,
     ensure,
+    state: stateOf,
     /** Options of `kind` matching `query`, in load order. */
     options(kind: IamObjectKind, query: string): IamObjectOption[] {
-      return states[kind].items.filter((option) => matchesIamObject(option, query))
+      return stateOf(kind).items.filter((option) => matchesIamObject(option, query))
     },
     /** Whether `kind` still has pages behind the loaded ones. */
     hasMore(kind: IamObjectKind): boolean {
-      return !states[kind].finished
+      return !stateOf(kind).finished
     },
     /** The loaded option for an id, if any - lets a picker show a name instead of a raw id. */
     find(kind: IamObjectKind, id: string): IamObjectOption | undefined {
-      return states[kind].items.find((option) => option.id === id)
+      return stateOf(kind).items.find((option) => option.id === id)
     },
   }
 }
+
