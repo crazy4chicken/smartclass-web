@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Download, Link, Plus, Refresh } from '@element-plus/icons-vue'
@@ -201,6 +201,29 @@ const recordsLoading = ref(false)
 const cameraEnum = ref<number | null>(null)
 const commandRunning = ref(false)
 
+/**
+ * Parameters of the next camera switch and recording start. A device captures from one
+ * camera at one resolution and frame rate at a time, so these must be values the selected
+ * camera declared during registration; an empty resolution/fps keeps the current one, and
+ * an empty codec records with the device's preferred one.
+ */
+const switchResolution = ref('')
+const switchFps = ref<number | null>(null)
+const recordCodec = ref('')
+
+/** The capability row of the selected camera, or undefined while none is selected. */
+const activeCamera = computed(() =>
+  (selected.value?.cameras ?? []).find((camera) => camera.camera_enum === cameraEnum.value),
+)
+
+watch(cameraEnum, () => {
+  // The lists below belong to one camera, so a selection that the new camera does not
+  // declare would be rejected; reset to its current parameters instead.
+  switchResolution.value = activeCamera.value?.resolution ?? ''
+  switchFps.value = activeCamera.value?.fps ?? null
+  recordCodec.value = ''
+})
+
 const editForm = ref({ name: '', location: '', team_id: '', owner_id: '' })
 const saving = ref(false)
 
@@ -322,10 +345,21 @@ async function runCommand(action: 'switch' | 'start' | 'stop' | 'photo'): Promis
     const deviceId = selected.value.id
     const camera = cameraEnum.value
     if (action === 'switch') {
-      const accepted = await switchCamera(deviceId, camera)
+      // Absent parameters keep the camera where it is, so send only what was chosen.
+      const resolution = switchResolution.value.trim()
+      const accepted = await switchCamera(deviceId, {
+        camera_enum: camera,
+        ...(resolution ? { resolution } : {}),
+        ...(switchFps.value !== null ? { fps: switchFps.value } : {}),
+      })
       ElMessage.success(`切换指令已下发（command ${accepted.command_id}）`)
+      await loadDetail(deviceId)
     } else if (action === 'start') {
-      const stream = await startRecording(deviceId, camera)
+      const codec = recordCodec.value.trim()
+      const stream = await startRecording(deviceId, {
+        camera_enum: camera,
+        ...(codec ? { codec } : {}),
+      })
       ElMessage.success(`已开始录制（stream ${stream.id}）`)
       await loadRecords()
     } else if (action === 'stop') {
@@ -461,10 +495,17 @@ onMounted(() => {
             </el-descriptions>
 
             <el-table :data="selected?.cameras ?? []" border size="small" class="block">
-              <el-table-column prop="camera_enum" label="摄像头编号" width="120" />
-              <el-table-column prop="resolution" label="分辨率" width="140" />
-              <el-table-column prop="fps" label="帧率" width="90" />
-              <el-table-column label="支持的编码" min-width="180">
+              <el-table-column prop="camera_enum" label="摄像头编号" width="110" />
+              <el-table-column label="当前参数" width="150">
+                <template #default="{ row }">{{ row.resolution }} @ {{ row.fps }}fps</template>
+              </el-table-column>
+              <el-table-column label="可选分辨率" min-width="180">
+                <template #default="{ row }">{{ (row.supported_resolutions ?? []).join(' / ') || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="可选帧率" min-width="140">
+                <template #default="{ row }">{{ (row.supported_framerates ?? []).join(' / ') || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="支持的编码" min-width="160">
                 <template #default="{ row }">{{ (row.supported_codec ?? []).join(' / ') || '—' }}</template>
               </el-table-column>
               <template #empty>
@@ -530,6 +571,43 @@ onMounted(() => {
                 拍照
               </el-button>
             </div>
+
+            <!-- A switch may move the camera to another resolution or frame rate and a
+                 recording may pick a codec, but only from what the camera declared. -->
+            <el-form v-if="activeCamera" label-width="90px" class="param-form">
+              <el-form-item label="切换分辨率">
+                <el-select v-model="switchResolution" class="param-select" placeholder="保持当前分辨率" :disabled="!canControl">
+                  <el-option
+                    v-for="resolution in activeCamera.supported_resolutions"
+                    :key="resolution"
+                    :value="resolution"
+                    :label="resolution"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="切换帧率">
+                <el-select v-model="switchFps" class="param-select" placeholder="保持当前帧率" :disabled="!canControl">
+                  <el-option
+                    v-for="rate in activeCamera.supported_framerates"
+                    :key="rate"
+                    :value="rate"
+                    :label="`${rate} fps`"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="录制编码">
+                <el-select v-model="recordCodec" class="param-select" placeholder="设备首选编码" :disabled="!canControl">
+                  <el-option
+                    v-for="codec in activeCamera.supported_codec"
+                    :key="codec"
+                    :value="codec"
+                    :label="codec"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <div v-else class="field-hint">设备离线或尚未上报摄像头，无法选择分辨率、帧率与编码。</div>
+
             <div v-if="!canControl" class="field-hint">当前账号没有 cam:control 授权，无法下发控制指令。</div>
             <div v-else-if="selected && !selected.online" class="field-hint">
               设备未建立 WebSocket 连接，控制指令会被拒绝（409）。
@@ -783,6 +861,15 @@ onMounted(() => {
 
 .camera-select {
   width: 300px;
+}
+
+.param-form {
+  margin-top: 12px;
+  max-width: 420px;
+}
+
+.param-select {
+  width: 100%;
 }
 
 .field-hint {

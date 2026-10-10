@@ -27,8 +27,15 @@ export interface Device {
 /** One camera reported by the device during registration. */
 export interface CameraCapability {
   camera_enum: number
+  /** The resolution the camera is at for the current connection. */
   resolution: string
+  /** The frame rate the camera is at for the current connection. */
   fps: number
+  /** Every resolution a camera switch may select for this camera. */
+  supported_resolutions: string[]
+  /** Every frame rate a camera switch may select for this camera. */
+  supported_framerates: number[]
+  /** Every codec a recording may select for this camera; the first entry is the device's preferred one. */
   supported_codec: string[]
   attrs?: Record<string, unknown>
 }
@@ -136,9 +143,31 @@ export interface DeviceUpdatePayload {
   owner_id?: string
 }
 
-/** Body of every camera command: which camera the command targets. */
+/** Body of the commands that carry nothing but the target camera. */
 export interface CameraCommandPayload {
   camera_enum: number
+}
+
+/**
+ * `POST /api/devices/{id}/camera/switch` body. A device captures from one camera at one
+ * resolution and frame rate at a time, and only this command changes them, so a switch may
+ * carry new parameters for the camera it selects. Each must be one the camera declared
+ * during registration; an absent one keeps its current value.
+ */
+export interface SwitchCameraPayload {
+  camera_enum: number
+  resolution?: string
+  fps?: number
+}
+
+/**
+ * `POST /api/devices/{id}/recording/start` body. The codec can be chosen only here - never
+ * on a camera switch or a photo - and must be one the camera declared; absent records with
+ * the device's preferred codec, the first entry of its `supported_codec` list.
+ */
+export interface StartRecordingPayload {
+  camera_enum: number
+  codec?: string
 }
 
 /** `POST /api/devices/{id}/camera/switch` — the queued command. */
@@ -215,20 +244,23 @@ export async function listDevicePhotos(deviceId: string, limit?: number): Promis
 // Camera commands
 // ---------------------------------------------------------------------------
 
-/** `POST /api/devices/{id}/camera/switch` — asks the live device to switch camera. */
-export async function switchCamera(deviceId: string, cameraEnum: number): Promise<CommandAccepted> {
+/**
+ * `POST /api/devices/{id}/camera/switch` — asks the live device to switch camera, optionally
+ * at new parameters. Omitting `resolution` and `fps` leaves that camera where it was.
+ */
+export async function switchCamera(deviceId: string, payload: SwitchCameraPayload): Promise<CommandAccepted> {
   const { data } = await webcamHttp.post<CommandAccepted>(
     `/api/devices/${encodeURIComponent(deviceId)}/camera/switch`,
-    { camera_enum: cameraEnum } satisfies CameraCommandPayload,
+    payload,
   )
   return data
 }
 
 /** `POST /api/devices/{id}/recording/start` — creates the stream and starts the recording. */
-export async function startRecording(deviceId: string, cameraEnum: number): Promise<Stream> {
+export async function startRecording(deviceId: string, payload: StartRecordingPayload): Promise<Stream> {
   const { data } = await webcamHttp.post<Stream>(
     `/api/devices/${encodeURIComponent(deviceId)}/recording/start`,
-    { camera_enum: cameraEnum } satisfies CameraCommandPayload,
+    payload,
   )
   return data
 }
