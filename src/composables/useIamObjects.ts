@@ -154,12 +154,14 @@ export function useIamObjects(teamId: () => string = () => '') {
     if (requiresTeamScope(kind) && team.trim() === '') {
       return
     }
-    const state = (states[cacheKey(kind, team)] ??= {
-      items: [],
-      cursor: '',
-      finished: false,
-      loading: false,
-    })
+    const key = cacheKey(kind, team)
+    if (!states[key]) {
+      states[key] = { items: [], cursor: '', finished: false, loading: false }
+    }
+    // Read the slot back out of the record instead of keeping the object just assigned: an
+    // assignment expression yields the raw object, and writing to that never notifies the
+    // picker's computeds - the options would only appear when some other write re-rendered.
+    const state = states[key]
     if (state.loading || (state.finished && !reset)) {
       return
     }
