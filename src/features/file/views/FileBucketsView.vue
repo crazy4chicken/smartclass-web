@@ -47,6 +47,9 @@ function formatQuota(value: number, unit: 'bytes' | 'objects'): string {
   return unit === 'bytes' ? formatBytes(value) : `${value} 个`
 }
 
+/** filehouse stores a capacity quota in bytes; the console edits it in MiB. */
+const BYTES_PER_MB = 1024 * 1024
+
 // --- Create / edit ---------------------------------------------------------
 
 const dialogVisible = ref(false)
@@ -67,6 +70,18 @@ const form = ref({
 const rules: FormRules = {
   name: [{ required: true, message: '请输入桶名', trigger: 'blur' }],
 }
+
+/**
+ * The capacity quota as the operator types it, in MiB. Reading converts the stored bytes and
+ * writing converts back, so a quota that is never touched keeps the exact byte count it was
+ * loaded with - only an edited field is rewritten, at MiB granularity.
+ */
+const quotaMb = computed({
+  get: () => Math.round(form.value.quota_bytes / BYTES_PER_MB),
+  set: (value: number) => {
+    form.value.quota_bytes = Math.round(value * BYTES_PER_MB)
+  },
+})
 
 function openCreate(): void {
   dialogMode.value = 'create'
@@ -239,8 +254,8 @@ onMounted(() => {
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="用途说明（可选）" />
         </el-form-item>
         <el-form-item label="容量配额">
-          <el-input-number v-model="form.quota_bytes" :min="0" :step="1073741824" :disabled="!canManageAny" />
-          <span class="field-hint">字节，0 = 不限</span>
+          <el-input-number v-model="quotaMb" :min="0" :step="1024" :disabled="!canManageAny" />
+          <span class="field-hint">MB，0 = 不限</span>
         </el-form-item>
         <el-form-item label="对象数配额">
           <el-input-number v-model="form.quota_objects" :min="0" :step="1000" :disabled="!canManageAny" />

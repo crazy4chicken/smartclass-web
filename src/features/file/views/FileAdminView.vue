@@ -65,6 +65,21 @@ const quotaRules: FormRules = {
   id: { required: true, message: '请输入主体 ID', trigger: 'blur' },
 }
 
+/** filehouse stores a capacity quota in bytes; the console edits it in MiB. */
+const BYTES_PER_MB = 1024 * 1024
+
+/**
+ * The capacity cap as the operator types it, in MiB. Reading converts the stored bytes and
+ * writing converts back, so a cap that is never touched keeps the exact byte count it was
+ * loaded with - only an edited field is rewritten, at MiB granularity.
+ */
+const maxMb = computed({
+  get: () => Math.round(quotaForm.value.max_bytes / BYTES_PER_MB),
+  set: (value: number) => {
+    quotaForm.value.max_bytes = Math.round(value * BYTES_PER_MB)
+  },
+})
+
 function openQuota(row?: QuotaOverride): void {
   quotaForm.value = row
     ? {
@@ -225,8 +240,8 @@ onMounted(() => {
           />
         </el-form-item>
         <el-form-item label="容量上限">
-          <el-input-number v-model="quotaForm.max_bytes" :min="0" :step="1073741824" />
-          <span class="field-hint">字节</span>
+          <el-input-number v-model="maxMb" :min="0" :step="1024" />
+          <span class="field-hint">MB</span>
         </el-form-item>
         <el-form-item label="对象数上限">
           <el-input-number v-model="quotaForm.max_objects" :min="0" :step="1000" />
