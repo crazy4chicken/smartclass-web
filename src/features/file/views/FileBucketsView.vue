@@ -72,12 +72,14 @@ const rules: FormRules = {
 }
 
 /**
- * The capacity quota as the operator types it, in MiB. Reading converts the stored bytes and
- * writing converts back, so a quota that is never touched keeps the exact byte count it was
- * loaded with - only an edited field is rewritten, at MiB granularity.
+ * The capacity quota as the operator types it, in MiB with two decimals - the same
+ * granularity the 用量 / 配额 column shows. Reading converts the stored bytes and writing
+ * converts back to whole bytes, so any MiB value the operator types survives the round trip
+ * (2.73 MiB is 2862612 bytes and reads back as 2.73), and a quota that is never touched keeps
+ * the exact byte count it was loaded with.
  */
 const quotaMb = computed({
-  get: () => Math.round(form.value.quota_bytes / BYTES_PER_MB),
+  get: () => Math.round((form.value.quota_bytes / BYTES_PER_MB) * 100) / 100,
   set: (value: number) => {
     form.value.quota_bytes = Math.round(value * BYTES_PER_MB)
   },
@@ -254,8 +256,8 @@ onMounted(() => {
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="用途说明（可选）" />
         </el-form-item>
         <el-form-item label="容量配额">
-          <el-input-number v-model="quotaMb" :min="0" :step="1024" :disabled="!canManageAny" />
-          <span class="field-hint">MB，0 = 不限</span>
+          <el-input-number v-model="quotaMb" :min="0" :step="1" :precision="2" :disabled="!canManageAny" />
+          <span class="field-hint">MB，可填小数，0 = 不限</span>
         </el-form-item>
         <el-form-item label="对象数配额">
           <el-input-number v-model="form.quota_objects" :min="0" :step="1000" :disabled="!canManageAny" />

@@ -69,12 +69,13 @@ const quotaRules: FormRules = {
 const BYTES_PER_MB = 1024 * 1024
 
 /**
- * The capacity cap as the operator types it, in MiB. Reading converts the stored bytes and
- * writing converts back, so a cap that is never touched keeps the exact byte count it was
- * loaded with - only an edited field is rewritten, at MiB granularity.
+ * The capacity cap as the operator types it, in MiB with two decimals. Reading converts the
+ * stored bytes and writing converts back to whole bytes, so any MiB value the operator types
+ * survives the round trip, and a cap that is never touched keeps the exact byte count it was
+ * loaded with.
  */
 const maxMb = computed({
-  get: () => Math.round(quotaForm.value.max_bytes / BYTES_PER_MB),
+  get: () => Math.round((quotaForm.value.max_bytes / BYTES_PER_MB) * 100) / 100,
   set: (value: number) => {
     quotaForm.value.max_bytes = Math.round(value * BYTES_PER_MB)
   },
@@ -240,8 +241,8 @@ onMounted(() => {
           />
         </el-form-item>
         <el-form-item label="容量上限">
-          <el-input-number v-model="maxMb" :min="0" :step="1024" />
-          <span class="field-hint">MB</span>
+          <el-input-number v-model="maxMb" :min="0" :step="1" :precision="2" />
+          <span class="field-hint">MB，可填小数</span>
         </el-form-item>
         <el-form-item label="对象数上限">
           <el-input-number v-model="quotaForm.max_objects" :min="0" :step="1000" />
