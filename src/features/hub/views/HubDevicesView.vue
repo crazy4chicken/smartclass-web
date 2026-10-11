@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Download, Link, Plus, Refresh } from '@element-plus/icons-vue'
@@ -227,6 +227,43 @@ watch(cameraEnum, () => {
 const editForm = ref({ name: '', location: '', team_id: '', owner_id: '' })
 const saving = ref(false)
 
+/**
+ * How often the open drawer re-reads the device. Its live state changes without any request
+ * from this page: the service records nothing about a camera switch, so the parameters it
+ * reports only move when the device registers again after applying one. Polling shows that
+ * as it happens instead of leaving the operator to reopen the tab.
+ */
+const DETAIL_POLL_MS = 3000
+let detailTimer: number | undefined
+
+/**
+ * Re-reads the device's live state in place. The edit form is deliberately left alone - an
+ * operator may be typing in it - and a failed poll stays silent, since the next tick retries.
+ */
+async function refreshDetail(deviceId: string): Promise<void> {
+  try {
+    const detail = await getDevice(deviceId)
+    selected.value = detail
+    // A device may register again with another camera set; keep the selection on a real one.
+    if (!detail.cameras.some((camera) => camera.camera_enum === cameraEnum.value)) {
+      cameraEnum.value = detail.cameras[0]?.camera_enum ?? null
+    }
+  } catch {
+    /* reported by the next tick */
+  }
+}
+
+function startDetailPoll(): void {
+  window.clearInterval(detailTimer)
+  detailTimer = window.setInterval(() => {
+    const device = selected.value
+    if (!drawerVisible.value || !device) {
+      return
+    }
+    void refreshDetail(device.id)
+  }, DETAIL_POLL_MS)
+}
+
 async function openDevice(row: Device, tab: string): Promise<void> {
   activeTab.value = tab
   drawerVisible.value = true
@@ -353,7 +390,9 @@ async function runCommand(action: 'switch' | 'start' | 'stop' | 'photo'): Promis
         ...(switchFps.value !== null ? { fps: switchFps.value } : {}),
       })
       ElMessage.success(`切换指令已下发（command ${accepted.command_id}）`)
-      await loadDetail(deviceId)
+      // The device republishes the new parameters when it registers again, so read once now
+      // and let the drawer poll catch the rest without flashing the drawer's loading mask.
+      void refreshDetail(deviceId)
     } else if (action === 'start') {
       const codec = recordCodec.value.trim()
       const stream = await startRecording(deviceId, {
@@ -415,6 +454,11 @@ async function openPhoto(row: Photo): Promise<void> {
 
 onMounted(() => {
   void refresh()
+  startDetailPoll()
+})
+
+onUnmounted(() => {
+  window.clearInterval(detailTimer)
 })
 </script>
 
